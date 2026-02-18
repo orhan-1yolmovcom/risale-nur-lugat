@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html class="dark" lang="tr">
+<head>
+    <meta charset="utf-8"/>
+    <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+    <title>Kelime Seçimi - Risale-i Nur Lûgat</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet"/>
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
+    <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+    <script>
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "primary": "#c70024",
+                        "primary-dark": "#a0001d",
+                        "background-light": "#f8f5f6",
+                        "background-dark": "#230f12",
+                    },
+                    fontFamily: {
+                        "display": ["Inter", "sans-serif"]
+                    },
+                },
+            },
+        }
+    </script>
+    <style>
+        .calligraphy-bg {
+            background-color: #181012;
+            background-image: radial-gradient(circle at 50% 50%, rgba(199, 0, 36, 0.08) 0%, transparent 60%);
+        }
+
+        .glass-card {
+            background: rgba(45, 30, 33, 0.4);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3);
+        }
+
+        .word-token {
+            cursor: pointer;
+            transition: all 0.3s ease;
+            padding: 8px 12px;
+            margin: 4px;
+            border-radius: 8px;
+            display: inline-block;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .word-token:hover {
+            background: rgba(255, 255, 255, 0.1);
+            transform: translateY(-2px);
+        }
+
+        .word-token.selected {
+            background: rgba(199, 0, 36, 0.3);
+            border-color: #c70024;
+            box-shadow: 0 0 15px rgba(199, 0, 36, 0.6);
+        }
+
+        /* Modal styles */
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.7);
+            backdrop-filter: blur(4px);
+        }
+
+        .modal.active {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal-content {
+            background: rgba(45, 30, 33, 0.95);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 24px;
+            padding: 32px;
+            max-width: 500px;
+            width: 90%;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+            animation: slideUp 0.3s ease;
+        }
+
+        @keyframes slideUp {
+            from {
+                transform: translateY(50px);
+                opacity: 0;
+            }
+            to {
+                transform: translateY(0);
+                opacity: 1;
+            }
+        }
+
+        .btn-liquid {
+            background: linear-gradient(180deg, #d91c3d 0%, #c70024 50%, #9e001d 100%);
+            box-shadow: 0 4px 15px rgba(199, 0, 36, 0.5);
+        }
+    </style>
+</head>
+<body class="font-display text-white min-h-screen calligraphy-bg">
+    <!-- Header -->
+    <div class="glass-card sticky top-0 z-50 px-6 py-4 mb-6">
+        <div class="flex items-center justify-between">
+            <button id="backBtn" class="p-2 rounded-full bg-white/5 hover:bg-white/10 transition-colors">
+                <span class="material-symbols-outlined text-2xl">arrow_back</span>
+            </button>
+            <h1 class="text-xl font-bold">Kelime Seçimi</h1>
+            <button id="favoritesBtn" class="p-2 rounded-full bg-white/5 hover:bg-white/10 transition-colors">
+                <span class="material-symbols-outlined text-2xl">favorite_border</span>
+            </button>
+        </div>
+    </div>
+
+    <!-- Main Content -->
+    <div class="container mx-auto px-4 pb-20">
+        <!-- OCR Text Display -->
+        <div class="glass-card rounded-3xl p-6 mb-6">
+            <h2 class="text-lg font-semibold mb-4 flex items-center gap-2">
+                <span class="material-symbols-outlined text-primary">text_fields</span>
+                Tanımlanan Metin
+            </h2>
+            <div id="textDisplay" class="text-white/80 leading-relaxed text-lg">
+                <!-- Original text will be displayed here -->
+            </div>
+        </div>
+
+        <!-- Word Tokens -->
+        <div class="glass-card rounded-3xl p-6">
+            <h2 class="text-lg font-semibold mb-4 flex items-center gap-2">
+                <span class="material-symbols-outlined text-primary">select_all</span>
+                Kelimeler (Dokunarak Seçin)
+            </h2>
+            <div id="tokenDisplay" class="flex flex-wrap">
+                <!-- Word tokens will be dynamically added here -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Word Meaning Modal -->
+    <div id="meaningModal" class="modal">
+        <div class="modal-content">
+            <div class="flex justify-between items-start mb-4">
+                <h2 id="modalWord" class="text-2xl font-bold text-primary"></h2>
+                <button id="closeModal" class="p-2 rounded-full bg-white/5 hover:bg-white/10 transition-colors">
+                    <span class="material-symbols-outlined">close</span>
+                </button>
+            </div>
+
+            <div id="modalContent" class="space-y-4">
+                <!-- Meaning will be displayed here -->
+            </div>
+
+            <div class="flex gap-3 mt-6">
+                <button id="speakBtn" class="flex-1 py-3 px-4 rounded-xl bg-white/5 hover:bg-white/10 transition-colors flex items-center justify-center gap-2">
+                    <span class="material-symbols-outlined">volume_up</span>
+                    <span>Seslendir</span>
+                </button>
+                <button id="addFavoriteBtn" class="flex-1 py-3 px-4 rounded-xl btn-liquid text-white font-semibold flex items-center justify-center gap-2">
+                    <span class="material-symbols-outlined">favorite</span>
+                    <span>Favorilere Ekle</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script type="module" src="js/modules/DictionaryModule.js"></script>
+    <script type="module" src="js/modules/FavoriteModule.js"></script>
+    <script type="module">
+        import { DictionaryModule } from './js/modules/DictionaryModule.js';
+        import { FavoriteModule } from './js/modules/FavoriteModule.js';
+
+        const dictionaryModule = new DictionaryModule();
+        const favoriteModule = new FavoriteModule();
+        let currentWord = null;
+
+        // Load OCR result from sessionStorage
+        const ocrResult = JSON.parse(sessionStorage.getItem('ocrResult') || '{"text":"","tokens":[]}');
+
+        // Display original text
+        document.getElementById('textDisplay').textContent = ocrResult.text || 'Metin bulunamadı';
+
+        // Display word tokens
+        const tokenDisplay = document.getElementById('tokenDisplay');
+        if (ocrResult.tokens && ocrResult.tokens.length > 0) {
+            ocrResult.tokens.forEach(token => {
+                const wordElement = document.createElement('span');
+                wordElement.className = 'word-token';
+                wordElement.textContent = token;
+                wordElement.addEventListener('click', async () => {
+                    // Remove previous selection
+                    document.querySelectorAll('.word-token').forEach(el => el.classList.remove('selected'));
+                    // Add selection to clicked word
+                    wordElement.classList.add('selected');
+                    
+                    // Look up word in dictionary
+                    currentWord = token;
+                    const meaning = await dictionaryModule.lookupWord(token);
+                    showModal(token, meaning);
+                });
+                tokenDisplay.appendChild(wordElement);
+            });
+        } else {
+            tokenDisplay.innerHTML = '<p class="text-white/60">Kelime bulunamadı</p>';
+        }
+
+        // Modal functions
+        function showModal(word, meaning) {
+            const modal = document.getElementById('meaningModal');
+            const modalWord = document.getElementById('modalWord');
+            const modalContent = document.getElementById('modalContent');
+
+            modalWord.textContent = word;
+            
+            if (meaning) {
+                modalContent.innerHTML = `
+                    <div class="space-y-3">
+                        <div>
+                            <h3 class="text-sm font-semibold text-white/60 mb-1">ANLAM</h3>
+                            <p class="text-white text-lg">${meaning.meaning}</p>
+                        </div>
+                        ${meaning.examples && meaning.examples.length > 0 ? `
+                            <div>
+                                <h3 class="text-sm font-semibold text-white/60 mb-1">ÖRNEKLER</h3>
+                                <ul class="list-disc list-inside text-white/80">
+                                    ${meaning.examples.map(ex => `<li>${ex}</li>`).join('')}
+                                </ul>
+                            </div>
+                        ` : ''}
+                        ${meaning.root ? `
+                            <div>
+                                <h3 class="text-sm font-semibold text-white/60 mb-1">KÖK</h3>
+                                <p class="text-white/80">${meaning.root}</p>
+                            </div>
+                        ` : ''}
+                    </div>
+                `;
+            } else {
+                modalContent.innerHTML = `
+                    <div class="text-center py-8">
+                        <span class="material-symbols-outlined text-6xl text-white/20 mb-4">search_off</span>
+                        <p class="text-white/60">Bu kelime lügatte bulunamadı</p>
+                        <p class="text-white/40 text-sm mt-2">Yakın kelimeleri aramayı deneyin</p>
+                    </div>
+                `;
+            }
+
+            modal.classList.add('active');
+        }
+
+        function closeModal() {
+            document.getElementById('meaningModal').classList.remove('active');
+        }
+
+        // Event listeners
+        document.getElementById('closeModal').addEventListener('click', closeModal);
+        document.getElementById('meaningModal').addEventListener('click', (e) => {
+            if (e.target.id === 'meaningModal') {
+                closeModal();
+            }
+        });
+
+        document.getElementById('backBtn').addEventListener('click', () => {
+            window.location.href = 'camera.html';
+        });
+
+        document.getElementById('favoritesBtn').addEventListener('click', () => {
+            window.location.href = 'favorites.html';
+        });
+
+        document.getElementById('speakBtn').addEventListener('click', () => {
+            if (currentWord) {
+                const utterance = new SpeechSynthesisUtterance(currentWord);
+                utterance.lang = 'tr-TR';
+                speechSynthesis.speak(utterance);
+            }
+        });
+
+        document.getElementById('addFavoriteBtn').addEventListener('click', async () => {
+            if (currentWord) {
+                const meaning = await dictionaryModule.lookupWord(currentWord);
+                if (meaning) {
+                    favoriteModule.addFavorite({
+                        word: currentWord,
+                        meaning: meaning.meaning,
+                        timestamp: Date.now()
+                    });
+                    alert('Favorilere eklendi!');
+                }
+            }
+        });
+    </script>
+</body>
+</html>

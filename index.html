@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html class="dark" lang="tr">
+<head>
+    <meta charset="utf-8"/>
+    <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+    <title>Risale-i Nur Lûgat - Giriş</title>
+    <!-- Material Symbols -->
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
+    <!-- Google Fonts: Inter -->
+    <link href="https://fonts.googleapis.com" rel="preconnect"/>
+    <link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet"/>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+    <!-- Tailwind Config -->
+    <script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "primary": "#c70024",
+                        "primary-dark": "#a0001d",
+                        "background-light": "#f8f5f6",
+                        "background-dark": "#230f12",
+                        "glass-surface": "rgba(35, 15, 18, 0.6)",
+                        "glass-border": "rgba(255, 255, 255, 0.1)",
+                    },
+                    fontFamily: {
+                        "display": ["Inter", "sans-serif"]
+                    },
+                    borderRadius: {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "2xl": "1rem",
+                        "3xl": "1.5rem",
+                        "full": "9999px"
+                    },
+                    backgroundImage: {
+                        'liquid-crimson': 'linear-gradient(135deg, #e6002a 0%, #c70024 50%, #8a0019 100%)',
+                    },
+                    boxShadow: {
+                        'glass': '0 8px 32px 0 rgba(0, 0, 0, 0.37)',
+                        'liquid': '0 4px 15px rgba(199, 0, 36, 0.4), inset 0 2px 4px rgba(255,255,255,0.3), inset 0 -2px 4px rgba(0,0,0,0.2)',
+                        'inner-glow': 'inset 0 0 20px rgba(199, 0, 36, 0.05)',
+                    }
+                },
+            },
+        }
+    </script>
+    <style>
+        /* Custom styles for subtle background pattern */
+        .calligraphy-bg {
+            background-color: #181012;
+            background-image: radial-gradient(circle at 50% 50%, rgba(199, 0, 36, 0.08) 0%, transparent 60%), 
+                url(https://lh3.googleusercontent.com/aida-public/AB6AXuCkCgN7XApp3BAwrL2gWdGNoAAw-ifUChvIMA0jAukRCRhY5eQAYu4zOnge6xzFzN9fcX0e69O_q0Jouv-_H_OV24xJXst6WhhxabuQ0GE93v5EcCiXrE39j3XzxMAxlXrMEsXSriYtrw0dihD0FH3zMxzsCyKsiGlANBPGN_cIJxLkgwKWqEVDa2mTbHGUTcuSdPocrBREUfz9uImDh_PgTwRVjXyLexNAdbxeBKBvayCHpaqrDriOT2xcfS1cTA-7zoF80rKW6fg);
+            background-blend-mode: overlay;
+            background-size: cover;
+            background-position: center
+        }
+
+        /* Glassmorphism utility */
+        .glass-card {
+            background: rgba(45, 30, 33, 0.4);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3)
+        }
+
+        /* Input specific glass style */
+        .input-glass {
+            background: rgba(0, 0, 0, 0.2);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            transition: all 0.3s ease
+        }
+
+        .input-glass:focus {
+            background: rgba(0, 0, 0, 0.3);
+            border-color: #c70024;
+            box-shadow: 0 0 0 1px #c70024
+        }
+
+        /* Liquid Button Effect */
+        .btn-liquid {
+            background: linear-gradient(180deg, #d91c3d 0%, #c70024 50%, #9e001d 100%);
+            box-shadow: 0 4px 15px rgba(199, 0, 36, 0.5), inset 0 1px 1px rgba(255, 255, 255, 0.4), inset 0 -2px 5px rgba(0, 0, 0, 0.2);
+            transition: transform 0.1s ease, box-shadow 0.2s ease
+        }
+
+        .btn-liquid:active {
+            transform: scale(0.98);
+            box-shadow: 0 2px 8px rgba(199, 0, 36, 0.4), inset 0 1px 1px rgba(255, 255, 255, 0.2)
+        }
+
+        body {
+            min-height: max(884px, 100dvh);
+        }
+    </style>
+</head>
+<body class="font-display antialiased text-white h-full min-h-screen selection:bg-primary selection:text-white overflow-x-hidden">
+    <!-- Main Container -->
+    <div class="relative flex min-h-screen w-full flex-col items-center justify-center p-4 sm:p-6 calligraphy-bg group/design-root">
+        <!-- Decorative subtle glow in background -->
+        <div class="absolute top-0 left-0 w-full h-full overflow-hidden pointer-events-none z-0">
+            <div class="absolute -top-[10%] -left-[10%] w-[50%] h-[50%] bg-primary/10 rounded-full blur-[120px]"></div>
+            <div class="absolute top-[40%] -right-[10%] w-[40%] h-[40%] bg-primary/5 rounded-full blur-[100px]"></div>
+        </div>
+
+        <!-- Content Wrapper -->
+        <div class="relative z-10 w-full max-w-[400px] flex flex-col gap-6 animate-fade-in">
+            <!-- Header Section -->
+            <div class="text-center space-y-2 mb-4">
+                <div class="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-br from-primary/80 to-primary-dark shadow-liquid mb-4 border border-white/10">
+                    <span class="material-symbols-outlined text-white text-3xl">auto_stories</span>
+                </div>
+                <h1 class="text-white tracking-tight text-[32px] font-bold leading-tight">Risale-i Nur Lûgat</h1>
+                <p class="text-white/60 text-base font-normal leading-normal">Okuma ve Lügat</p>
+            </div>
+
+            <!-- Login Card -->
+            <div class="glass-card rounded-3xl p-6 sm:p-8 w-full shadow-glass ring-1 ring-white/5">
+                <form id="loginForm" class="flex flex-col gap-5">
+                    <!-- Email Input -->
+                    <div class="space-y-2">
+                        <label class="text-white/80 text-sm font-medium ml-1" for="email">E-posta Adresi</label>
+                        <div class="relative">
+                            <div class="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+                                <span class="material-symbols-outlined text-white/40 text-xl">mail</span>
+                            </div>
+                            <input class="input-glass w-full rounded-2xl h-14 pl-12 pr-4 text-white placeholder:text-white/30 focus:outline-none focus:ring-0 text-base" 
+                                   id="email" 
+                                   placeholder="isim@ornek.com" 
+                                   type="email"/>
+                        </div>
+                    </div>
+
+                    <!-- Password Input -->
+                    <div class="space-y-2">
+                        <label class="text-white/80 text-sm font-medium ml-1" for="password">Şifre</label>
+                        <div class="relative">
+                            <div class="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+                                <span class="material-symbols-outlined text-white/40 text-xl">lock</span>
+                            </div>
+                            <input class="input-glass w-full rounded-2xl h-14 pl-12 pr-12 text-white placeholder:text-white/30 focus:outline-none focus:ring-0 text-base" 
+                                   id="password" 
+                                   placeholder="******" 
+                                   type="password"/>
+                            <button class="absolute inset-y-0 right-0 pr-4 flex items-center cursor-pointer text-white/40 hover:text-white transition-colors" 
+                                    type="button"
+                                    id="togglePassword">
+                                <span class="material-symbols-outlined text-xl">visibility_off</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Forgot Password Link -->
+                    <div class="flex justify-end">
+                        <a class="text-sm font-medium text-primary hover:text-red-400 transition-colors" href="#">
+                            Şifremi Unuttum?
+                        </a>
+                    </div>
+
+                    <!-- Login Button -->
+                    <button class="btn-liquid w-full h-14 rounded-2xl flex items-center justify-center text-white font-bold text-lg tracking-wide mt-2" 
+                            type="submit">
+                        Giriş Yap
+                    </button>
+                </form>
+            </div>
+
+            <!-- Guest & Sign Up Options -->
+            <div class="flex flex-col items-center gap-6 mt-2">
+                <!-- Guest Button -->
+                <button id="guestBtn" class="group flex items-center gap-2 px-6 py-3 rounded-xl bg-white/5 hover:bg-white/10 border border-white/5 hover:border-white/10 transition-all duration-300 backdrop-blur-sm" 
+                        type="button">
+                    <span class="text-white/90 text-sm font-medium">Misafir Olarak Devam Et</span>
+                    <span class="material-symbols-outlined text-white/60 text-lg group-hover:translate-x-1 transition-transform">arrow_forward</span>
+                </button>
+
+                <!-- Divider -->
+                <div class="w-full flex items-center gap-4 px-8 opacity-40">
+                    <div class="h-px bg-gradient-to-r from-transparent via-white to-transparent flex-1"></div>
+                </div>
+
+                <!-- Register Link -->
+                <div class="text-center">
+                    <p class="text-white/50 text-sm">
+                        Hesabın yok mu?
+                        <a class="text-white font-semibold hover:text-primary transition-colors ml-1 underline decoration-white/20 underline-offset-4 decoration-1" href="#">
+                            Kayıt Ol
+                        </a>
+                    </p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Footer / Version -->
+        <div class="absolute bottom-6 text-white/20 text-xs font-light">
+            Sürüm 1.0.1
+        </div>
+    </div>
+
+    <script type="module" src="js/modules/UserModule.js"></script>
+    <script type="module">
+        import { UserModule } from './js/modules/UserModule.js';
+
+        const userModule = new UserModule();
+
+        // Login form handler
+        document.getElementById('loginForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const email = document.getElementById('email').value;
+            const password = document.getElementById('password').value;
+            
+            if (email && password) {
+                userModule.login(email, password);
+                window.location.href = 'camera.html';
+            }
+        });
+
+        // Guest button handler
+        document.getElementById('guestBtn').addEventListener('click', () => {
+            userModule.loginAsGuest();
+            window.location.href = 'camera.html';
+        });
+
+        // Toggle password visibility
+        document.getElementById('togglePassword').addEventListener('click', function() {
+            const passwordInput = document.getElementById('password');
+            const icon = this.querySelector('.material-symbols-outlined');
+            
+            if (passwordInput.type === 'password') {
+                passwordInput.type = 'text';
+                icon.textContent = 'visibility';
+            } else {
+                passwordInput.type = 'password';
+                icon.textContent = 'visibility_off';
+            }
+        });
+    </script>
+</body>
+</html>

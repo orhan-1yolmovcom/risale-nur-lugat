@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html class="dark" lang="tr">
+<head>
+    <meta charset="utf-8"/>
+    <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+    <title>OCR Kamera Tarama</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet"/>
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
+    <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+    <script>
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "primary": "#c70024",
+                        "background-light": "#f8f5f6",
+                        "background-dark": "#230f12",
+                    },
+                    fontFamily: {
+                        "display": ["Inter", "sans-serif"]
+                    },
+                    borderRadius: {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "2xl": "1rem",
+                        "3xl": "1.5rem",
+                        "full": "9999px"
+                    },
+                },
+            },
+        }
+    </script>
+    <style>
+        /* Custom styles for the liquid glass effect */
+        .glass-panel {
+            background: rgba(20, 10, 12, 0.4);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .liquid-button {
+            background: linear-gradient(135deg, #e6002a 0%, #a3001d 100%);
+            box-shadow: 
+                inset 0 2px 4px rgba(255, 255, 255, 0.3),
+                inset 0 -2px 4px rgba(0, 0, 0, 0.4),
+                0 8px 20px rgba(199, 0, 36, 0.5);
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .liquid-button::after {
+            content: '';
+            position: absolute;
+            top: 10%;
+            left: 15%;
+            width: 30%;
+            height: 20%;
+            border-radius: 50%;
+            background: linear-gradient(180deg, rgba(255,255,255,0.8) 0%, rgba(255,255,255,0) 100%);
+            filter: blur(1px);
+        }
+
+        .crimson-glow {
+            box-shadow: 0 0 15px rgba(199, 0, 36, 0.6);
+        }
+
+        .scan-line {
+            background: linear-gradient(to bottom, transparent, rgba(199, 0, 36, 0.5), transparent);
+            animation: scan 3s infinite linear;
+        }
+
+        @keyframes scan {
+            0% { transform: translateY(-100%); }
+            100% { transform: translateY(100%); }
+        }
+
+        body {
+            min-height: max(884px, 100dvh);
+        }
+
+        #videoElement {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        #canvas {
+            display: none;
+        }
+    </style>
+</head>
+<body class="bg-background-dark text-white font-display overflow-hidden h-screen w-full relative">
+    <!-- Camera Viewfinder Background -->
+    <div class="absolute inset-0 w-full h-full z-0" id="cameraContainer">
+        <video id="videoElement" autoplay playsinline></video>
+        <canvas id="canvas"></canvas>
+        <div class="absolute inset-0 bg-gradient-to-b from-black/40 via-transparent to-black/60"></div>
+    </div>
+
+    <!-- Top Control Bar -->
+    <div class="absolute top-0 left-0 w-full z-20 pt-12 pb-4 px-6 flex justify-between items-center glass-panel rounded-b-3xl border-t-0 border-x-0">
+        <button id="flashBtn" class="p-2 rounded-full bg-black/20 hover:bg-black/40 transition-colors text-white">
+            <span class="material-symbols-outlined text-[28px]">flash_off</span>
+        </button>
+        
+        <div class="flex items-center gap-2 px-4 py-1.5 rounded-full bg-black/40 backdrop-blur-sm border border-white/10">
+            <span class="w-2 h-2 rounded-full bg-primary animate-pulse"></span>
+            <span class="text-xs font-medium tracking-wide text-white/90">LIVE TEXT</span>
+        </div>
+        
+        <button id="settingsBtn" class="p-2 rounded-full bg-black/20 hover:bg-black/40 transition-colors text-white">
+            <span class="material-symbols-outlined text-[28px]">settings</span>
+        </button>
+    </div>
+
+    <!-- Main Viewfinder Area -->
+    <div class="relative z-10 w-full h-full flex flex-col justify-center items-center pb-32">
+        <!-- OCR Focus Frame -->
+        <div class="relative w-[85%] aspect-[3/4] max-w-sm rounded-3xl overflow-hidden group">
+            <!-- Glass Background of Frame -->
+            <div class="absolute inset-0 bg-white/5 backdrop-blur-[2px] border border-white/20 rounded-3xl"></div>
+            
+            <!-- Corner Accents (Crimson) -->
+            <div class="absolute top-0 left-0 w-8 h-8 border-t-4 border-l-4 border-primary rounded-tl-2xl shadow-[0_0_10px_rgba(199,0,36,0.6)]"></div>
+            <div class="absolute top-0 right-0 w-8 h-8 border-t-4 border-r-4 border-primary rounded-tr-2xl shadow-[0_0_10px_rgba(199,0,36,0.6)]"></div>
+            <div class="absolute bottom-0 left-0 w-8 h-8 border-b-4 border-l-4 border-primary rounded-bl-2xl shadow-[0_0_10px_rgba(199,0,36,0.6)]"></div>
+            <div class="absolute bottom-0 right-0 w-8 h-8 border-b-4 border-r-4 border-primary rounded-br-2xl shadow-[0_0_10px_rgba(199,0,36,0.6)]"></div>
+            
+            <!-- Scanning Animation Line -->
+            <div class="absolute inset-0 w-full h-full overflow-hidden rounded-3xl">
+                <div class="w-full h-32 scan-line absolute top-[-20%] animate-[scan_3s_ease-in-out_infinite]"></div>
+            </div>
+            
+            <!-- Central Target Reticle -->
+            <div class="absolute inset-0 flex items-center justify-center pointer-events-none">
+                <div class="w-12 h-1 bg-white/30 rounded-full"></div>
+                <div class="h-12 w-1 bg-white/30 rounded-full absolute"></div>
+            </div>
+        </div>
+
+        <!-- Instructional Toast -->
+        <div class="mt-8 px-5 py-2.5 glass-panel rounded-full flex items-center gap-2 shadow-lg">
+            <span class="material-symbols-outlined text-primary text-sm">center_focus_strong</span>
+            <p class="text-sm font-medium text-white/90 tracking-wide">Metni kırmızı çerçeve içine hizalayın</p>
+        </div>
+    </div>
+
+    <!-- Bottom Action Bar -->
+    <div class="absolute bottom-0 left-0 w-full z-20 pb-10 pt-20 px-8 bg-gradient-to-t from-black via-black/80 to-transparent flex items-end justify-between">
+        <!-- Gallery / Import -->
+        <div class="flex flex-col items-center gap-1">
+            <button id="galleryBtn" class="relative w-14 h-14 rounded-2xl overflow-hidden border-2 border-white/20 hover:border-primary transition-colors group bg-black/40">
+                <div class="absolute inset-0 bg-black/30 flex items-center justify-center">
+                    <span class="material-symbols-outlined text-white text-2xl drop-shadow-md">image</span>
+                </div>
+            </button>
+            <span class="text-[10px] font-medium text-white/60 tracking-wider uppercase">Galeri</span>
+        </div>
+
+        <!-- Primary Capture Button -->
+        <div class="relative -top-4">
+            <!-- Outer Glow Ring -->
+            <div class="absolute inset-0 bg-primary/30 rounded-full blur-xl animate-pulse"></div>
+            
+            <!-- The Liquid Button -->
+            <button id="captureBtn" class="relative w-24 h-24 rounded-full liquid-button flex items-center justify-center border-4 border-white/10 active:scale-95 transition-transform duration-100 group">
+                <div class="absolute inset-0 rounded-full border border-white/20"></div>
+                <span class="material-symbols-outlined text-white text-4xl drop-shadow-[0_2px_4px_rgba(0,0,0,0.3)] group-active:scale-90 transition-transform">filter_center_focus</span>
+            </button>
+        </div>
+
+        <!-- History / Recent Scans -->
+        <div class="flex flex-col items-center gap-1">
+            <button id="historyBtn" class="w-14 h-14 rounded-2xl bg-white/5 border border-white/10 backdrop-blur-md flex items-center justify-center hover:bg-white/10 transition-colors">
+                <span class="material-symbols-outlined text-white/90 text-2xl">history</span>
+            </button>
+            <span class="text-[10px] font-medium text-white/60 tracking-wider uppercase">Geçmiş</span>
+        </div>
+    </div>
+
+    <script type="module" src="js/modules/OCRModule.js"></script>
+    <script type="module">
+        import { OCRModule } from './js/modules/OCRModule.js';
+        
+        const ocrModule = new OCRModule();
+
+        // Initialize camera
+        ocrModule.initCamera();
+
+        // Capture button handler
+        document.getElementById('captureBtn').addEventListener('click', async () => {
+            const result = await ocrModule.captureAndProcess();
+            if (result && result.tokens && result.tokens.length > 0) {
+                // Store OCR result in sessionStorage
+                sessionStorage.setItem('ocrResult', JSON.stringify(result));
+                // Navigate to dictionary page
+                window.location.href = 'dictionary.html';
+            }
+        });
+
+        // Flash toggle
+        document.getElementById('flashBtn').addEventListener('click', function() {
+            const icon = this.querySelector('.material-symbols-outlined');
+            if (icon.textContent === 'flash_off') {
+                icon.textContent = 'flash_on';
+            } else {
+                icon.textContent = 'flash_off';
+            }
+        });
+
+        // Settings button
+        document.getElementById('settingsBtn').addEventListener('click', () => {
+            window.location.href = 'settings.html';
+        });
+
+        // History button
+        document.getElementById('historyBtn').addEventListener('click', () => {
+            alert('Geçmiş özelliği yakında eklenecek');
+        });
+
+        // Gallery button
+        document.getElementById('galleryBtn').addEventListener('click', () => {
+            alert('Galeri özelliği yakında eklenecek');
+        });
+    </script>
+</body>
+</html>
