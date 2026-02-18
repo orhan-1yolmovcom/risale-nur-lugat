@@ -606,7 +606,7 @@ const UIModule = (() => {
     const clearBtn   = document.getElementById('brush-clear-btn');
     const hintEl     = document.getElementById('brush-hint');
 
-    hintEl.textContent = 'Parmağınızla metni üzerinde gezdirin';
+    hintEl.textContent = 'Parmağınızla boyayın · 2 parmakla yakınlaştır';
     confirmBtn.classList.add('opacity-40', 'pointer-events-none');
     view.classList.remove('hidden');
     view.classList.add('flex');
@@ -686,12 +686,44 @@ const UIModule = (() => {
       let lx = 0, ly = 0;
       let rafPending = false;
       let lineY      = null;  // locks brush to a single horizontal text line
+      let viewScale  = 1;
+      let viewTx     = 0;
+      let viewTy     = 0;
+      let pinching   = false;
+      let touchCount = 0;
+      let pinchStartDist = 0;
+      let pinchStartScale = 1;
+      let pinchStartMid = { x: 0, y: 0 };
+      let pinchStartTx = 0;
+      let pinchStartTy = 0;
+
+      function clampView() {
+        const maxX = Math.max(0, (dispW * (viewScale - 1)) / 2);
+        const maxY = Math.max(0, (dispH * (viewScale - 1)) / 2);
+        viewTx = Math.max(-maxX, Math.min(maxX, viewTx));
+        viewTy = Math.max(-maxY, Math.min(maxY, viewTy));
+      }
+
+      function toCanvasPoint(clientX, clientY) {
+        const r = fc.getBoundingClientRect();
+        const sx = clientX - r.left;
+        const sy = clientY - r.top;
+        return {
+          x: ((sx - (dispW / 2 + viewTx)) / viewScale) + dispW / 2,
+          y: ((sy - (dispH / 2 + viewTy)) / viewScale) + dispH / 2,
+        };
+      }
 
       // ── RAF-throttled render ─────────────────────────────────
       function render() {
         ctx.clearRect(0, 0, dispW, dispH);
         ctx.fillStyle = '#000';
         ctx.fillRect(0, 0, dispW, dispH);
+        ctx.save();
+        ctx.translate(dispW / 2 + viewTx, dispH / 2 + viewTy);
+        ctx.scale(viewScale, viewScale);
+        ctx.translate(-dispW / 2, -dispH / 2);
+
         ctx.drawImage(srcCanvas, iX, iY, iW, iH);
         // Single-line constraint visual guide
         if (lineY !== null) {
@@ -715,6 +747,17 @@ const UIModule = (() => {
         ctx.globalAlpha = STROKE_ALPHA;
         ctx.drawImage(strkC, 0, 0, dispW, dispH);
         ctx.restore();
+        ctx.restore();
+
+        if (viewScale > 1.01) {
+          ctx.save();
+          ctx.fillStyle = 'rgba(0,0,0,0.35)';
+          ctx.fillRect(10, 10, 72, 26);
+          ctx.fillStyle = 'rgba(255,255,255,0.9)';
+          ctx.font = '600 12px Inter, system-ui, sans-serif';
+          ctx.fillText(`Zoom ${viewScale.toFixed(1)}x`, 20, 27);
+          ctx.restore();
+        }
         rafPending = false;
       }
       function scheduleRender() {
@@ -742,17 +785,67 @@ const UIModule = (() => {
 
       render(); // initial frozen photo
 
+      // ── Two-finger pinch zoom/pan on brush canvas ───────────
+      function getTouchDist(t1, t2) {
+        return Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY);
+      }
+      function getTouchMid(t1, t2) {
+        return { x: (t1.clientX + t2.clientX) / 2, y: (t1.clientY + t2.clientY) / 2 };
+      }
+
+      fc.addEventListener('touchstart', (e) => {
+        touchCount = e.touches.length;
+        if (e.touches.length === 2) {
+          pinching = true;
+          drawing = false;
+          const [t1, t2] = e.touches;
+          pinchStartDist = getTouchDist(t1, t2) || 1;
+          pinchStartScale = viewScale;
+          pinchStartMid = getTouchMid(t1, t2);
+          pinchStartTx = viewTx;
+          pinchStartTy = viewTy;
+          if (ghostEl) ghostEl.classList.remove('show');
+          e.preventDefault();
+        }
+      }, { passive: false });
+
+      fc.addEventListener('touchmove', (e) => {
+        touchCount = e.touches.length;
+        if (!pinching || e.touches.length !== 2) return;
+        const [t1, t2] = e.touches;
+        const dist = getTouchDist(t1, t2) || pinchStartDist;
+        const mid = getTouchMid(t1, t2);
+
+        viewScale = Math.max(1, Math.min(4, pinchStartScale * (dist / pinchStartDist)));
+        viewTx = pinchStartTx + (mid.x - pinchStartMid.x);
+        viewTy = pinchStartTy + (mid.y - pinchStartMid.y);
+        clampView();
+        scheduleRender();
+        e.preventDefault();
+      }, { passive: false });
+
+      fc.addEventListener('touchend', (e) => {
+        touchCount = e.touches.length;
+        if (e.touches.length < 2) pinching = false;
+      }, { passive: true });
+
+      fc.addEventListener('touchcancel', () => {
+        touchCount = 0;
+        pinching = false;
+      }, { passive: true });
+
       // ── Pointer events ───────────────────────────────────────
       fc.addEventListener('pointerdown', e => {
+        if (pinching || touchCount > 1) return;
         if (!e.isPrimary) return;     // ignore secondary touches (pinch)
         e.preventDefault();
         fc.setPointerCapture(e.pointerId);
         if (ghostEl) ghostEl.classList.remove('show');
         drawing = true;
 
-        const r = fc.getBoundingClientRect();
-        lx = e.clientX - r.left;
-        ly = e.clientY - r.top;
+        const p = toCanvasPoint(e.clientX, e.clientY);
+        lx = p.x;
+        ly = p.y;
 
         // Lock Y to the first stroke's line for single-line precision
         if (lineY === null) {
@@ -776,13 +869,13 @@ const UIModule = (() => {
       fc.addEventListener('pointermove', e => {
         if (!drawing || !e.isPrimary) return;
         e.preventDefault();
-        const r   = fc.getBoundingClientRect();
         // getCoalescedEvents() returns ALL intermediate positions between frames.
         // Without this, fast swipes produce sparse events → gaps in stroke.
         const pts = e.getCoalescedEvents ? e.getCoalescedEvents() : [e];
         for (const pt of pts) {
-          const cx = pt.clientX - r.left;
-          let   cy = pt.clientY - r.top;
+          const p = toCanvasPoint(pt.clientX, pt.clientY);
+          const cx = p.x;
+          let   cy = p.y;
           // Clamp Y to the horizontal line band for single-line precision
           if (lineY !== null) {
             const band = Math.max(brushR * 2.5, 30);
@@ -818,7 +911,7 @@ const UIModule = (() => {
         if (!undoStack.length) {
           lineY = null;
           confirmBtn.classList.add('opacity-40', 'pointer-events-none');
-          hintEl.textContent = 'Parmağınızla metni üzerinde gezdirin';
+          hintEl.textContent = 'Parmağınızla boyayın · 2 parmakla yakınlaştır';
         }
       };
 
@@ -830,7 +923,7 @@ const UIModule = (() => {
         strkCtx.clearRect(0, 0, physW, physH);
         scheduleRender();
         confirmBtn.classList.add('opacity-40', 'pointer-events-none');
-        hintEl.textContent = 'Parmağınızla metni üzerinde gezdirin';
+        hintEl.textContent = 'Parmağınızla boyayın · 2 parmakla yakınlaştır';
       };
 
       // ── Cancel ───────────────────────────────────────────────
@@ -920,7 +1013,8 @@ const UIModule = (() => {
         </div>
 
         <!-- Top Control Bar -->
-        <div class="absolute top-0 left-0 w-full z-20 pt-12 pb-4 px-6 flex justify-between items-center">
+        <div class="absolute top-0 left-0 w-full z-20 px-5 pb-3 flex justify-between items-center"
+             style="padding-top:max(env(safe-area-inset-top, 0px), 18px);">
           <button id="scan-back-btn" class="p-2.5 rounded-full bg-black/40 backdrop-blur-sm border border-white/10 text-white active:scale-90 transition-transform">
             <span class="material-symbols-outlined text-[24px]">arrow_back</span>
           </button>
@@ -937,7 +1031,8 @@ const UIModule = (() => {
              box-shadow: 0 0 0 100vmax rgba(0,0,0,N)  ← darkens everything OUTSIDE the frame
              No background on the element → video shows through inside (clear view)
         -->
-        <div class="relative z-10 w-full h-full flex flex-col justify-center items-center pb-28">
+           <div class="relative z-10 w-full h-full flex flex-col justify-center items-center"
+             style="padding-bottom: max(env(safe-area-inset-bottom, 0px), 118px);">
           <div id="scan-frame"
                class="relative rounded-3xl"
                style="width:82%; max-width:340px; aspect-ratio:3/4;
@@ -973,12 +1068,13 @@ const UIModule = (() => {
         </div>
 
         <!-- Bottom Action Bar -->
-        <div class="absolute bottom-0 left-0 w-full z-20 pb-10 pt-14 px-8
+        <div class="absolute bottom-0 left-0 w-full z-20 pt-10 px-6
                     bg-gradient-to-t from-black via-black/80 to-transparent
-                    flex items-end justify-between">
+                    flex items-end justify-between"
+             style="padding-bottom: max(env(safe-area-inset-bottom, 0px), 18px);">
           <!-- Gallery -->
           <div class="flex flex-col items-center gap-1.5">
-            <button id="scan-gallery-btn" class="w-14 h-14 rounded-2xl border-2 border-white/20 bg-black/40 backdrop-blur-sm flex items-center justify-center active:scale-90 transition-transform">
+            <button id="scan-gallery-btn" class="w-12 h-12 rounded-xl border border-white/20 bg-black/45 backdrop-blur-sm flex items-center justify-center active:scale-90 transition-transform">
               <span class="material-symbols-outlined text-white/60 text-2xl">image</span>
             </button>
             <span class="text-[10px] text-white/50 uppercase tracking-wider">Galeri</span>
@@ -986,18 +1082,18 @@ const UIModule = (() => {
           </div>
 
           <!-- Shutter -->
-          <div class="relative -top-3">
+          <div class="relative -top-1">
             <div class="absolute inset-0 bg-primary/40 rounded-full blur-xl animate-pulse"></div>
             <button id="scan-capture-btn"
                     class="relative liquid-button flex items-center justify-center border-4 border-white/20 active:scale-95 transition-transform duration-100 group"
-                    style="width:92px; height:92px; border-radius:50%;">
-              <span class="material-symbols-outlined text-white text-[40px] group-active:scale-90 transition-transform">photo_camera</span>
+                    style="width:78px; height:78px; border-radius:50%;">
+              <span class="material-symbols-outlined text-white text-[33px] group-active:scale-90 transition-transform">photo_camera</span>
             </button>
           </div>
 
           <!-- History -->
           <div class="flex flex-col items-center gap-1.5">
-            <button id="scan-history-btn" class="w-14 h-14 rounded-2xl border border-white/10 bg-white/5 flex items-center justify-center active:scale-90 transition-transform">
+            <button id="scan-history-btn" class="w-12 h-12 rounded-xl border border-white/10 bg-white/8 flex items-center justify-center active:scale-90 transition-transform">
               <span class="material-symbols-outlined text-white/70 text-2xl">history</span>
             </button>
             <span class="text-[10px] text-white/50 uppercase tracking-wider">Geçmiş</span>
@@ -1043,7 +1139,7 @@ const UIModule = (() => {
             <!-- Hint -->
             <div class="flex items-center justify-center gap-2">
               <div class="w-2.5 h-2.5 rounded-full bg-violet-400 opacity-70 flex-shrink-0"></div>
-              <p id="brush-hint" class="text-white/55 text-xs">Parmağınızla metni üzerinde gezdirin</p>
+              <p id="brush-hint" class="text-white/55 text-xs">Parmağınızla boyayın · 2 parmakla yakınlaştır</p>
             </div>
 
             <!-- Brush size slider -->
