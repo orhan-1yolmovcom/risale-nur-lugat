@@ -477,8 +477,8 @@ const UIModule = (() => {
       const maskCtx = maskC.getContext('2d');
       maskCtx.scale(dpr, dpr);
 
-      const BRUSH_R   = Math.max(22, Math.min(52, dispW * 0.075)); // ~7.5% of width
-      const BRUSH_CLR = 'rgba(139, 92, 246, 0.30)';                // violet-500 @30%
+      const BRUSH_R   = Math.max(10, Math.min(16, dispW * 0.026)); // ~10px on 390px screen
+      const BRUSH_CLR = 'rgba(139, 92, 246, 0.18)';                // violet-500 @18% — stays semi-transparent
 
       // ── Stroke history stack (for undo) ─────────────────────
       // Each entry = ImageData snapshot taken BEFORE the stroke begins
@@ -525,10 +525,11 @@ const UIModule = (() => {
         const cx = e.clientX - r.left;
         const cy = e.clientY - r.top;
 
-        // Paint a filled capsule from last point to current point
+        // Single stroke with round linecap — naturally creates a smooth capsule.
+        // Do NOT add a separate fill arc here: double-painting the same pixels
+        // with source-over rapidly accumulates opacity and makes the brush opaque.
         maskCtx.globalCompositeOperation = 'source-over';
         maskCtx.strokeStyle = BRUSH_CLR;
-        maskCtx.fillStyle   = BRUSH_CLR;
         maskCtx.lineWidth   = BRUSH_R * 2;
         maskCtx.lineCap     = 'round';
         maskCtx.lineJoin    = 'round';
@@ -537,11 +538,6 @@ const UIModule = (() => {
         maskCtx.moveTo(lx, ly);
         maskCtx.lineTo(cx, cy);
         maskCtx.stroke();
-
-        // Filled circle at current tip for smooth edges
-        maskCtx.beginPath();
-        maskCtx.arc(cx, cy, BRUSH_R, 0, Math.PI * 2);
-        maskCtx.fill();
 
         render();
         lx = cx; ly = cy;
