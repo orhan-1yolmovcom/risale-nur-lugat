@@ -309,16 +309,55 @@ const DictionaryModule = (() => {
   function search(query) {
     const q = normalize(query);
     if (!q) return [];
+
     const out = [];
+    const seen = new Set();
+
+    const pushUnique = (e) => {
+      if (!e) return;
+      const k = `${e.word}|${e.meaning}`;
+      if (seen.has(k)) return;
+      seen.add(k);
+      out.push(e);
+    };
+
+    // 1) Exact word/stem matches always first
+    const exact = exactIndex.get(q) || [];
+    for (const e of exact) pushUnique(e);
+
+    // 2) Then prefix / contains / meaning matches (ranked)
+    const prefix = [];
+    const contains = [];
+    const inMeaning = [];
+
     for (const e of dictionary) {
       const w = normalize(e.word);
       const s = normalize(e.stem || '');
-      const m = String(e.meaning || '').toLowerCase();
-      if (w.includes(q) || s.includes(q) || q.includes(w) || m.includes(q)) {
-        out.push(e);
-        if (out.length >= 20) break;
+
+      // already added from exactIndex
+      if ((w && w === q) || (s && s === q)) continue;
+
+      if ((w && w.startsWith(q)) || (s && s.startsWith(q))) {
+        prefix.push(e);
+        continue;
       }
+
+      if ((w && w.includes(q)) || (s && s.includes(q)) || (w && q.includes(w)) || (s && q.includes(s))) {
+        contains.push(e);
+        continue;
+      }
+
+      const m = normalize(String(e.meaning || ''));
+      if (m && m.includes(q)) inMeaning.push(e);
     }
+
+    for (const e of prefix) pushUnique(e);
+    for (const e of contains) pushUnique(e);
+    for (const e of inMeaning) pushUnique(e);
+
+    // Keep payload bounded for UI performance
+    if (out.length > 200) out.length = 200;
+
     return out;
   }
 
