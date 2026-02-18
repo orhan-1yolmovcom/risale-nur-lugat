@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Risale-i Nur Lûgat - Home Dashboard</title>
+<!-- Tailwind CSS -->
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<!-- Material Symbols -->
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<!-- Google Fonts -->
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<!-- Theme Configuration -->
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "primary": "#c70024",
+                        "primary-dark": "#9e001d",
+                        "primary-light": "#ff1a40",
+                        "background-light": "#f8f5f6",
+                        "background-dark": "#181012", // Deep charcoal/dark brown base
+                        "surface-dark": "#231518",
+                        "glass-border": "rgba(255, 255, 255, 0.1)",
+                    },
+                    fontFamily: {
+                        "display": ["Inter", "sans-serif"],
+                        "body": ["Inter", "sans-serif"],
+                    },
+                    borderRadius: {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "2xl": "1rem",
+                        "3xl": "1.5rem",
+                        "full": "9999px"
+                    },
+                    boxShadow: {
+                        'glow': '0 0 20px rgba(199, 0, 36, 0.5)',
+                        'glass': '0 4px 30px rgba(0, 0, 0, 0.1)',
+                        'inner-light': 'inset 0 1px 0 0 rgba(255, 255, 255, 0.2)',
+                    }
+                },
+            },
+        }
+    </script>
+<style>
+        /* Custom Glassmorphism Utilities */
+        .glass-panel {
+            background: rgba(35, 21, 24, 0.6);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+        }
+        
+        .glass-button-primary {
+            background: linear-gradient(135deg, rgba(199, 0, 36, 0.9), rgba(158, 0, 29, 0.95));
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            box-shadow: 0 8px 32px 0 rgba(199, 0, 36, 0.3), inset 0 2px 0 rgba(255, 255, 255, 0.2);
+            transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+        }
+
+        .glass-button-primary:active {
+            transform: scale(0.96);
+            box-shadow: 0 4px 16px 0 rgba(199, 0, 36, 0.2);
+        }
+
+        .glass-card {
+            background: linear-gradient(145deg, rgba(255, 255, 255, 0.05) 0%, rgba(255, 255, 255, 0.02) 100%);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+            transition: all 0.2s ease;
+        }
+
+        .glass-card:active {
+            background: rgba(255, 255, 255, 0.08);
+            transform: scale(0.98);
+        }
+
+        /* Ambient Glow Background */
+        .ambient-glow {
+            position: absolute;
+            width: 300px;
+            height: 300px;
+            background: radial-gradient(circle, rgba(199,0,36,0.25) 0%, rgba(24,16,18,0) 70%);
+            filter: blur(40px);
+            z-index: 0;
+            pointer-events: none;
+        }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-background-light dark:bg-background-dark text-slate-900 dark:text-white font-display antialiased overflow-hidden h-screen flex flex-col relative selection:bg-primary selection:text-white">
+<!-- Ambient Background Effects -->
+<div class="fixed top-[-10%] left-[-10%] w-[500px] h-[500px] bg-primary/20 rounded-full blur-[100px] opacity-40 pointer-events-none"></div>
+<div class="fixed bottom-[-10%] right-[-10%] w-[400px] h-[400px] bg-primary/10 rounded-full blur-[80px] opacity-30 pointer-events-none"></div>
+<!-- Main Content Wrapper -->
+<div class="relative z-10 flex flex-col h-full w-full max-w-md mx-auto">
+<!-- Header -->
+<header class="flex items-center justify-between px-6 pt-12 pb-4">
+<div class="flex items-center gap-3">
+<!-- Abstract Logo Placeholder -->
+<div class="w-10 h-10 rounded-xl bg-gradient-to-br from-primary to-primary-dark flex items-center justify-center shadow-lg shadow-primary/20 ring-1 ring-white/10">
+<span class="material-symbols-outlined text-white text-[20px]">auto_stories</span>
+</div>
+<div>
+<h1 class="text-white text-lg font-bold tracking-tight leading-none">Risale-i Nur</h1>
+<span class="text-white/50 text-xs font-medium tracking-widest uppercase">Lûgat</span>
+</div>
+</div>
+<button class="w-10 h-10 rounded-full flex items-center justify-center hover:bg-white/5 transition-colors text-white/70">
+<span class="material-symbols-outlined">notifications</span>
+</button>
+</header>
+<!-- Main Action Area (Centered) -->
+<main class="flex-1 flex flex-col items-center justify-center w-full px-6 relative">
+<!-- Central Glow behind button -->
+<div class="ambient-glow top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2"></div>
+<div class="relative flex flex-col items-center gap-6 z-10">
+<!-- Large Liquid Glass Button -->
+<button class="group glass-button-primary w-48 h-48 rounded-[2.5rem] flex flex-col items-center justify-center gap-4 relative overflow-hidden">
+<!-- Internal Shine Effect -->
+<div class="absolute top-0 left-0 w-full h-1/2 bg-gradient-to-b from-white/20 to-transparent opacity-50 pointer-events-none"></div>
+<div class="w-20 h-20 rounded-2xl bg-black/20 flex items-center justify-center backdrop-blur-sm border border-white/10 shadow-inner">
+<span class="material-symbols-outlined text-white text-[40px] group-hover:scale-110 transition-transform duration-300">center_focus_strong</span>
+</div>
+<div class="text-center">
+<span class="block text-white font-bold text-lg tracking-wide drop-shadow-md">Metni Tara</span>
+<span class="block text-white/70 text-xs font-medium mt-1">Kamera ile Oku</span>
+</div>
+</button>
+<p class="text-white/40 text-sm text-center max-w-[200px] leading-relaxed">
+                    Risale-i Nur metinlerini tarayın ve anlamlarını anında keşfedin.
+                </p>
+</div>
+</main>
+<!-- Secondary Grid Navigation -->
+<div class="px-6 pb-24 w-full">
+<div class="grid grid-cols-2 gap-4">
+<!-- Dictionary (Lûgat) -->
+<button class="glass-card h-32 rounded-3xl p-5 flex flex-col justify-between items-start group">
+<div class="w-10 h-10 rounded-full bg-white/5 flex items-center justify-center text-primary-light group-hover:bg-primary/20 group-hover:text-white transition-colors">
+<span class="material-symbols-outlined">menu_book</span>
+</div>
+<div>
+<span class="block text-white font-semibold text-base">Lûgat</span>
+<span class="block text-white/40 text-xs mt-0.5">Sözlük</span>
+</div>
+</button>
+<!-- Favorites (Favoriler) -->
+<button class="glass-card h-32 rounded-3xl p-5 flex flex-col justify-between items-start group">
+<div class="w-10 h-10 rounded-full bg-white/5 flex items-center justify-center text-primary-light group-hover:bg-primary/20 group-hover:text-white transition-colors">
+<span class="material-symbols-outlined">favorite</span>
+</div>
+<div>
+<span class="block text-white font-semibold text-base">Favoriler</span>
+<span class="block text-white/40 text-xs mt-0.5">Kaydedilenler</span>
+</div>
+</button>
+<!-- Recent Scans (Son Taramalar) -->
+<button class="glass-card h-32 rounded-3xl p-5 flex flex-col justify-between items-start group">
+<div class="w-10 h-10 rounded-full bg-white/5 flex items-center justify-center text-primary-light group-hover:bg-primary/20 group-hover:text-white transition-colors">
+<span class="material-symbols-outlined">history</span>
+</div>
+<div>
+<span class="block text-white font-semibold text-base">Geçmiş</span>
+<span class="block text-white/40 text-xs mt-0.5">Son Taramalar</span>
+</div>
+</button>
+<!-- Settings (Ayarlar) -->
+<button class="glass-card h-32 rounded-3xl p-5 flex flex-col justify-between items-start group">
+<div class="w-10 h-10 rounded-full bg-white/5 flex items-center justify-center text-primary-light group-hover:bg-primary/20 group-hover:text-white transition-colors">
+<span class="material-symbols-outlined">settings</span>
+</div>
+<div>
+<span class="block text-white font-semibold text-base">Ayarlar</span>
+<span class="block text-white/40 text-xs mt-0.5">Uygulama</span>
+</div>
+</button>
+</div>
+</div>
+<!-- Custom Bottom Navigation (Simplified for this view) -->
+<div class="absolute bottom-0 left-0 w-full glass-panel border-t border-white/5 h-20 flex justify-around items-center px-6 pb-2 rounded-t-[2rem] z-20">
+<a class="flex flex-col items-center justify-center gap-1 text-primary" href="#">
+<span class="material-symbols-outlined text-[26px]">home</span>
+<span class="text-[10px] font-medium">Ana Sayfa</span>
+</a>
+<a class="flex flex-col items-center justify-center gap-1 text-white/40 hover:text-white/80 transition-colors" href="#">
+<span class="material-symbols-outlined text-[26px]">search</span>
+<span class="text-[10px] font-medium">Ara</span>
+</a>
+<!-- Spacer for visual balance if needed, or simply centered layout -->
+<a class="flex flex-col items-center justify-center gap-1 text-white/40 hover:text-white/80 transition-colors" href="#">
+<span class="material-symbols-outlined text-[26px]">person</span>
+<span class="text-[10px] font-medium">Profil</span>
+</a>
+</div>
+</div>
+</body></html>

@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Application Settings</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "primary": "#c70024",
+                        "background-light": "#f8f5f6",
+                        "background-dark": "#230f12",
+                        "glass-surface": "rgba(30, 30, 30, 0.6)",
+                        "glass-border": "rgba(255, 255, 255, 0.08)",
+                        "glass-highlight": "rgba(255, 255, 255, 0.03)",
+                    },
+                    fontFamily: {
+                        "display": ["Inter", "sans-serif"]
+                    },
+                    backgroundImage: {
+                        'liquid-gradient': 'radial-gradient(circle at 50% 0%, #3a1519 0%, #181012 60%, #000000 100%)',
+                    },
+                    backdropFilter: {
+                        'glass': 'blur(16px) saturate(180%)',
+                    }
+                },
+            },
+        }
+    </script>
+<style>
+        .glass-panel {
+            background: linear-gradient(145deg, rgba(40, 40, 40, 0.4) 0%, rgba(20, 20, 20, 0.4) 100%);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3);
+        }
+        
+        .toggle-checkbox:checked {
+            right: 0;
+            border-color: #c70024;
+        }
+        .toggle-checkbox:checked + .toggle-label {
+            background-color: #c70024;
+        }
+        
+        /* Custom Range Slider */
+        input[type=range] {
+            -webkit-appearance: none;
+            width: 100%;
+            background: transparent;
+        }
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+        }
+        input[type=range]:focus {
+            outline: none;
+        }
+        input[type=range]::-ms-track {
+            width: 100%;
+            cursor: pointer;
+            background: transparent; 
+            border-color: transparent;
+            color: transparent;
+        }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="font-display bg-background-light dark:bg-background-dark text-gray-900 dark:text-white antialiased min-h-screen flex flex-col relative overflow-x-hidden">
+<!-- Background Decoration -->
+<div class="fixed inset-0 z-0 bg-liquid-gradient pointer-events-none"></div>
+<div class="fixed top-[-10%] right-[-10%] w-[500px] h-[500px] bg-primary/20 rounded-full blur-[120px] pointer-events-none mix-blend-screen"></div>
+<div class="fixed bottom-[-10%] left-[-10%] w-[400px] h-[400px] bg-primary/10 rounded-full blur-[100px] pointer-events-none mix-blend-screen"></div>
+<!-- Main Content Wrapper -->
+<div class="relative z-10 flex flex-col flex-1 w-full max-w-md mx-auto h-full min-h-screen pb-24">
+<!-- Header -->
+<header class="sticky top-0 z-50 flex items-center justify-between px-4 py-4 backdrop-blur-md bg-black/20 border-b border-white/5">
+<button class="p-2 rounded-full hover:bg-white/10 transition-colors text-white">
+<span class="material-symbols-outlined text-[28px]">arrow_back</span>
+</button>
+<h1 class="text-xl font-bold tracking-tight text-white">Ayarlar</h1>
+<div class="w-10"></div> <!-- Spacer for center alignment -->
+</header>
+<!-- Scrollable Settings Content -->
+<main class="flex-1 px-4 py-6 space-y-8">
+<!-- Section: Reading Experience -->
+<section class="space-y-3">
+<h2 class="text-xs font-semibold text-gray-400 uppercase tracking-widest pl-2">Okuma Deneyimi</h2>
+<div class="glass-panel rounded-2xl overflow-hidden">
+<!-- Font Size Control -->
+<div class="p-5 border-b border-white/5">
+<div class="flex items-center justify-between mb-4">
+<div class="flex items-center gap-3">
+<div class="w-8 h-8 rounded-lg bg-primary/20 flex items-center justify-center text-primary">
+<span class="material-symbols-outlined text-[20px]">format_size</span>
+</div>
+<span class="text-base font-medium">Font Boyutu</span>
+</div>
+<span class="text-sm text-gray-400 bg-white/5 px-2 py-1 rounded">18px</span>
+</div>
+<div class="flex items-center gap-4">
+<span class="text-xs text-gray-400 font-medium">A</span>
+<div class="relative flex-1 h-10 flex items-center">
+<input class="w-full h-1.5 bg-gray-700 rounded-full appearance-none cursor-pointer [&amp;::-webkit-slider-thumb]:appearance-none [&amp;::-webkit-slider-thumb]:w-6 [&amp;::-webkit-slider-thumb]:h-6 [&amp;::-webkit-slider-thumb]:rounded-full [&amp;::-webkit-slider-thumb]:bg-white [&amp;::-webkit-slider-thumb]:shadow-lg [&amp;::-webkit-slider-thumb]:mt-[-9px] [&amp;::-webkit-slider-runnable-track]:h-1.5 [&amp;::-webkit-slider-runnable-track]:bg-gradient-to-r [&amp;::-webkit-slider-runnable-track]:from-primary [&amp;::-webkit-slider-runnable-track]:to-gray-700 [&amp;::-webkit-slider-runnable-track]:rounded-full" max="32" min="12" type="range" value="18"/>
+</div>
+<span class="text-lg text-white font-bold">A</span>
+</div>
+</div>
+<!-- Arabic Clarity Toggle -->
+<div class="flex items-center justify-between p-4 hover:bg-white/5 transition-colors cursor-pointer">
+<div class="flex items-center gap-3">
+<div class="w-8 h-8 rounded-lg bg-primary/20 flex items-center justify-center text-primary">
+<span class="material-symbols-outlined text-[20px]">visibility</span>
+</div>
+<div class="flex flex-col">
+<span class="text-base font-medium">Arapça Netliği</span>
+<span class="text-xs text-gray-400">OCR metin iyileştirmesi</span>
+</div>
+</div>
+<div class="relative inline-block w-12 h-7 align-middle select-none transition duration-200 ease-in">
+<input class="toggle-checkbox absolute block w-5 h-5 rounded-full bg-white border-4 border-transparent appearance-none cursor-pointer transition-all duration-300 ease-in-out top-1 left-1 checked:left-[calc(100%-1.5rem)] shadow-sm z-10" id="arabic-toggle" name="toggle" type="checkbox"/>
+<label class="toggle-label block overflow-hidden h-7 rounded-full bg-gray-700 cursor-pointer transition-colors duration-300 ease-in-out" for="arabic-toggle"></label>
+</div>
+</div>
+</div>
+</section>
+<!-- Section: Appearance -->
+<section class="space-y-3">
+<h2 class="text-xs font-semibold text-gray-400 uppercase tracking-widest pl-2">Görünüm</h2>
+<div class="glass-panel rounded-2xl overflow-hidden p-1 flex items-center justify-between gap-1">
+<button class="flex-1 flex flex-col items-center justify-center gap-2 p-3 rounded-xl bg-white/10 border border-primary/50 text-white transition-all shadow-[0_0_15px_rgba(199,0,36,0.3)]">
+<div class="w-8 h-8 rounded-full bg-gray-900 border border-gray-700"></div>
+<span class="text-xs font-medium">Sistem</span>
+</button>
+<button class="flex-1 flex flex-col items-center justify-center gap-2 p-3 rounded-xl hover:bg-white/5 transition-all text-gray-400 hover:text-white">
+<div class="w-8 h-8 rounded-full bg-[#1a1a1a] border border-gray-700"></div>
+<span class="text-xs font-medium">Koyu</span>
+</button>
+<button class="flex-1 flex flex-col items-center justify-center gap-2 p-3 rounded-xl hover:bg-white/5 transition-all text-gray-400 hover:text-white">
+<div class="w-8 h-8 rounded-full bg-[#e8e0c9] border border-[#d4cbb3]"></div>
+<span class="text-xs font-medium">Sepya</span>
+</button>
+</div>
+</section>
+<!-- Section: Dictionary & Data -->
+<section class="space-y-3">
+<h2 class="text-xs font-semibold text-gray-400 uppercase tracking-widest pl-2">Veri ve Lûgat</h2>
+<div class="glass-panel rounded-2xl overflow-hidden">
+<!-- Offline Dictionary -->
+<div class="flex flex-col p-4 border-b border-white/5">
+<div class="flex items-center justify-between mb-2">
+<div class="flex items-center gap-3">
+<div class="w-8 h-8 rounded-lg bg-primary/20 flex items-center justify-center text-primary">
+<span class="material-symbols-outlined text-[20px]">download_for_offline</span>
+</div>
+<div class="flex flex-col">
+<span class="text-base font-medium">Offline Lûgat</span>
+<span class="text-xs text-gray-400">İnternetsiz kullanım için (85MB)</span>
+</div>
+</div>
+<div class="relative inline-block w-12 h-7 align-middle select-none transition duration-200 ease-in">
+<input checked="" class="toggle-checkbox absolute block w-5 h-5 rounded-full bg-white border-4 border-transparent appearance-none cursor-pointer transition-all duration-300 ease-in-out top-1 left-1 checked:left-[calc(100%-1.5rem)] shadow-sm z-10" id="offline-toggle" name="toggle" type="checkbox"/>
+<label class="toggle-label block overflow-hidden h-7 rounded-full bg-gray-700 cursor-pointer transition-colors duration-300 ease-in-out" for="offline-toggle"></label>
+</div>
+</div>
+<!-- Download Progress (Simulated) -->
+<div class="w-full bg-gray-800 rounded-full h-1.5 mt-2 overflow-hidden">
+<div class="bg-primary h-1.5 rounded-full w-[65%]" style="box-shadow: 0 0 10px rgba(199, 0, 36, 0.5);"></div>
+</div>
+<div class="flex justify-between mt-1">
+<span class="text-[10px] text-gray-500">İndiriliyor...</span>
+<span class="text-[10px] text-primary font-bold">65%</span>
+</div>
+</div>
+<!-- Clear Cache -->
+<button class="w-full flex items-center justify-between p-4 hover:bg-white/5 transition-colors text-left group">
+<div class="flex items-center gap-3">
+<div class="w-8 h-8 rounded-lg bg-gray-800 flex items-center justify-center text-gray-400 group-hover:text-white transition-colors">
+<span class="material-symbols-outlined text-[20px]">delete_outline</span>
+</div>
+<span class="text-base font-medium text-gray-200 group-hover:text-white">Önbelleği Temizle</span>
+</div>
+<span class="material-symbols-outlined text-gray-500 group-hover:text-white text-[20px]">chevron_right</span>
+</button>
+</div>
+</section>
+<!-- Section: About -->
+<section class="space-y-3 pb-8">
+<h2 class="text-xs font-semibold text-gray-400 uppercase tracking-widest pl-2">Uygulama Hakkında</h2>
+<div class="glass-panel rounded-2xl overflow-hidden">
+<div class="flex items-center justify-between p-4 border-b border-white/5">
+<span class="text-base font-medium text-gray-300">Sürüm</span>
+<span class="text-sm text-gray-500 font-mono">v2.4.1 (Build 890)</span>
+</div>
+<button class="w-full flex items-center justify-between p-4 hover:bg-white/5 transition-colors text-left group">
+<span class="text-base font-medium text-gray-300 group-hover:text-white">Geri Bildirim Gönder</span>
+<span class="material-symbols-outlined text-gray-500 group-hover:text-white text-[20px]">open_in_new</span>
+</button>
+</div>
+<p class="text-center text-xs text-gray-600 mt-6">
+                    Risale-i Nur Külliyatı Okuma ve Araştırma Platformu <br/>
+                    © 2024 Tüm Hakları Saklıdır
+                </p>
+</section>
+</main>
+<!-- Bottom Navigation Bar (Fixed) -->
+<nav class="fixed bottom-0 left-0 right-0 z-50 glass-panel border-t border-white/5 pb-5 pt-3 px-6">
+<div class="flex justify-between items-end max-w-md mx-auto">
+<a class="flex flex-col items-center gap-1 group" href="#">
+<span class="material-symbols-outlined text-gray-500 group-hover:text-primary transition-colors text-[28px]">home</span>
+<span class="text-[10px] font-medium text-gray-500 group-hover:text-primary transition-colors">Ana Sayfa</span>
+</a>
+<a class="flex flex-col items-center gap-1 group" href="#">
+<span class="material-symbols-outlined text-gray-500 group-hover:text-primary transition-colors text-[28px]">menu_book</span>
+<span class="text-[10px] font-medium text-gray-500 group-hover:text-primary transition-colors">Okuma</span>
+</a>
+<a class="flex flex-col items-center gap-1 group relative" href="#">
+<!-- Active Indicator Glow -->
+<div class="absolute -top-10 w-12 h-12 bg-primary/20 rounded-full blur-xl"></div>
+<span class="material-symbols-outlined text-primary text-[28px] fill-current">settings</span>
+<span class="text-[10px] font-medium text-primary">Ayarlar</span>
+</a>
+<a class="flex flex-col items-center gap-1 group" href="#">
+<span class="material-symbols-outlined text-gray-500 group-hover:text-primary transition-colors text-[28px]">search</span>
+<span class="text-[10px] font-medium text-gray-500 group-hover:text-primary transition-colors">Ara</span>
+</a>
+</div>
+</nav>
+</div>
+</body></html>

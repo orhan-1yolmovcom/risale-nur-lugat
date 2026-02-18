@@ -1,0 +1,19 @@
+{
+  "name": "risale-nur-lugat",
+  "version": "1.0.0",
+  "description": "Kamera ile Risale-i Nur metinlerini tarayıp bilinmeyen kelimelerin anlamlarını gösteren uygulama.",
+  "scripts": {
+    "start": "npx http-server app -p 8080 -o"
+  },
+  "keywords": [
+    "ocr",
+    "risale-i-nur",
+    "dictionary",
+    "pwa"
+  ],
+  "author": "Orhan Yol",
+  "license": "MIT",
+  "devDependencies": {
+    "http-server": "^14.1.1"
+  }
+}
