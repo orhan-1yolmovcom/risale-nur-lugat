@@ -342,7 +342,7 @@ const DictionaryModule = (() => {
         continue;
       }
 
-      if ((w && w.includes(q)) || (s && s.includes(q)) || (w && q.includes(w)) || (s && q.includes(s))) {
+      if ((w && w.includes(q)) || (s && s.includes(q))) {
         contains.push(e);
         continue;
       }
