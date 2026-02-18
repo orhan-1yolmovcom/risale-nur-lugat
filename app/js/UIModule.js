@@ -384,14 +384,249 @@ const UIModule = (() => {
   }
 
   // ============================================================
+  //  PAGE: OCR CAMERA SCAN  — helper: draw crop canvas state
+  // ============================================================
+
+  /**
+   * Re-draws the crop canvas with the captured image and an optional
+   * selection rectangle overlay.
+   */
+  function _drawCropState(ctx, srcCanvas, layout, sel) {
+    const { dispW, dispH, imgDrawW, imgDrawH, imgOffX, imgOffY } = layout;
+    ctx.clearRect(0, 0, dispW, dispH);
+
+    // Black letterbox bars
+    ctx.fillStyle = '#000';
+    ctx.fillRect(0, 0, dispW, dispH);
+
+    // Draw the captured image (letterboxed)
+    ctx.drawImage(srcCanvas, imgOffX, imgOffY, imgDrawW, imgDrawH);
+
+    if (sel && sel.w > 4 && sel.h > 4) {
+      // Darken everything outside the selection
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.60)';
+      ctx.fillRect(imgOffX, imgOffY, imgDrawW, imgDrawH);
+
+      // Restore the selected region (clear dark overlay, redraw image)
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(sel.x, sel.y, sel.w, sel.h);
+      ctx.clip();
+      ctx.drawImage(srcCanvas, imgOffX, imgOffY, imgDrawW, imgDrawH);
+      ctx.restore();
+
+      // Crimson selection border
+      ctx.strokeStyle = '#c70024';
+      ctx.lineWidth = 2.5;
+      ctx.setLineDash([]);
+      ctx.strokeRect(sel.x + 1, sel.y + 1, sel.w - 2, sel.h - 2);
+
+      // Corner dot handles
+      ctx.fillStyle = '#c70024';
+      [[sel.x, sel.y], [sel.x + sel.w, sel.y],
+       [sel.x, sel.y + sel.h], [sel.x + sel.w, sel.y + sel.h]].forEach(([hx, hy]) => {
+        ctx.beginPath();
+        ctx.arc(hx, hy, 6, 0, Math.PI * 2);
+        ctx.fill();
+      });
+
+      // Selection size hint (top-left corner)
+      const wPx = Math.round(sel.w);
+      const hPx = Math.round(sel.h);
+      ctx.fillStyle = 'rgba(199,0,36,0.85)';
+      ctx.font = 'bold 11px Inter, sans-serif';
+      ctx.fillText(`${wPx} × ${hPx}`, sel.x + 6, sel.y - 5 < 14 ? sel.y + 16 : sel.y - 5);
+    }
+  }
+
+  /**
+   * Shows the crop-selection overlay with the captured canvas.
+   * Wires up all interaction (draw rectangle) and confirm/cancel buttons.
+   */
+  function _showCropView(srcCanvas) {
+    const cropView   = document.getElementById('crop-select-view');
+    const cropCanvas = document.getElementById('crop-canvas');
+    const confirmBtn = document.getElementById('crop-confirm-btn');
+    const cancelBtn  = document.getElementById('crop-cancel-btn');
+    const hintEl     = document.getElementById('crop-hint');
+
+    cropView.classList.remove('hidden');
+    cropView.classList.add('flex');
+
+    // Wait one frame so the element has its final layout dimensions
+    requestAnimationFrame(() => {
+      const dpr  = window.devicePixelRatio || 1;
+      const rect = cropCanvas.getBoundingClientRect();
+      const dispW = rect.width;
+      const dispH = rect.height;
+
+      cropCanvas.width  = Math.round(dispW  * dpr);
+      cropCanvas.height = Math.round(dispH * dpr);
+
+      const ctx = cropCanvas.getContext('2d');
+      ctx.scale(dpr, dpr);
+
+      // Letterbox: fit source image inside display area
+      const imgAspect  = srcCanvas.width / srcCanvas.height;
+      const dispAspect = dispW / dispH;
+      let imgDrawW, imgDrawH, imgOffX, imgOffY;
+      if (imgAspect > dispAspect) {
+        imgDrawW = dispW;
+        imgDrawH = dispW / imgAspect;
+      } else {
+        imgDrawH = dispH;
+        imgDrawW = dispH * imgAspect;
+      }
+      imgOffX = (dispW - imgDrawW) / 2;
+      imgOffY = (dispH - imgDrawH) / 2;
+
+      const layout = { dispW, dispH, imgDrawW, imgDrawH, imgOffX, imgOffY };
+      cropCanvas._layout    = layout;
+      cropCanvas._srcCanvas = srcCanvas;
+      cropCanvas._selection = null;
+
+      // Initial render (no selection yet)
+      _drawCropState(ctx, srcCanvas, layout, null);
+
+      // ── Interaction ──────────────────────────────────────────
+      let isDrawing = false;
+      let startX = 0, startY = 0;
+
+      function getPos(e) {
+        const cr  = cropCanvas.getBoundingClientRect();
+        const src = e.touches ? e.touches[0] : e;
+        return { x: src.clientX - cr.left, y: src.clientY - cr.top };
+      }
+
+      function onStart(e) {
+        e.preventDefault();
+        const p = getPos(e);
+        startX = p.x; startY = p.y;
+        isDrawing = true;
+        cropCanvas._selection = null;
+        confirmBtn.classList.add('opacity-40', 'pointer-events-none');
+      }
+
+      function onMove(e) {
+        e.preventDefault();
+        if (!isDrawing) return;
+        const p = getPos(e);
+        const sel = {
+          x: Math.min(startX, p.x),
+          y: Math.min(startY, p.y),
+          w: Math.abs(p.x - startX),
+          h: Math.abs(p.y - startY),
+        };
+        _drawCropState(ctx, srcCanvas, layout, sel);
+        cropCanvas._selection = sel;
+      }
+
+      function onEnd(e) {
+        if (!isDrawing) return;
+        isDrawing = false;
+        const sel = cropCanvas._selection;
+        if (sel && sel.w > 18 && sel.h > 18) {
+          confirmBtn.classList.remove('opacity-40', 'pointer-events-none');
+          hintEl.textContent = '✓ Seçim hazır — tekrar çizebilir veya "Tara"ya basabilirsiniz';
+        } else {
+          cropCanvas._selection = null;
+          _drawCropState(ctx, srcCanvas, layout, null);
+          hintEl.textContent = 'Daha büyük bir alan seçin';
+        }
+      }
+
+      // Clean up old listeners by cloning the canvas (prevents duplicates on re-open)
+      const freshCanvas = cropCanvas.cloneNode(true);
+      freshCanvas.width  = cropCanvas.width;
+      freshCanvas.height = cropCanvas.height;
+      cropCanvas.parentNode.replaceChild(freshCanvas, cropCanvas);
+
+      // Re-draw on the fresh canvas
+      const freshCtx = freshCanvas.getContext('2d');
+      freshCtx.scale(dpr, dpr);
+      freshCanvas._layout    = layout;
+      freshCanvas._srcCanvas = srcCanvas;
+      freshCanvas._selection = null;
+      _drawCropState(freshCtx, srcCanvas, layout, null);
+
+      freshCanvas.addEventListener('mousedown',  onStart);
+      freshCanvas.addEventListener('mousemove',  onMove);
+      freshCanvas.addEventListener('mouseup',    onEnd);
+      freshCanvas.addEventListener('touchstart', onStart, { passive: false });
+      freshCanvas.addEventListener('touchmove',  onMove,  { passive: false });
+      freshCanvas.addEventListener('touchend',   onEnd);
+    });
+
+    // ── Cancel ───────────────────────────────────────────────
+    const newCancel = cancelBtn.cloneNode(true);
+    cancelBtn.parentNode.replaceChild(newCancel, cancelBtn);
+    newCancel.addEventListener('click', () => {
+      cropView.classList.add('hidden');
+      cropView.classList.remove('flex');
+      document.getElementById('crop-hint').textContent = 'Sürükleyerek alan seçin';
+      document.getElementById('crop-confirm-btn').classList.add('opacity-40', 'pointer-events-none');
+    });
+
+    // ── Confirm: crop → OCR ───────────────────────────────────
+    const newConfirm = confirmBtn.cloneNode(true);
+    confirmBtn.parentNode.replaceChild(newConfirm, confirmBtn);
+    newConfirm.addEventListener('click', async () => {
+      const canvas = document.getElementById('crop-canvas');
+      const sel    = canvas._selection;
+      const src    = canvas._srcCanvas;
+      const layout = canvas._layout;
+      if (!sel || !src || !layout) return;
+
+      // Map display coords → source pixel coords
+      const scaleX = src.width  / layout.imgDrawW;
+      const scaleY = src.height / layout.imgDrawH;
+      const srcX = Math.round((sel.x - layout.imgOffX) * scaleX);
+      const srcY = Math.round((sel.y - layout.imgOffY) * scaleY);
+      const srcW = Math.round(sel.w * scaleX);
+      const srcH = Math.round(sel.h * scaleY);
+
+      // Hide crop view & show processing status
+      cropView.classList.add('hidden');
+      cropView.classList.remove('flex');
+      const statusText = document.getElementById('scan-status-text');
+      const statusDot  = document.getElementById('scan-status-dot');
+      if (statusText) { statusText.textContent = 'İŞLENİYOR'; }
+      if (statusDot)  { statusDot.classList.replace('bg-primary', 'bg-yellow-400'); }
+
+      // Crop selected area and run OCR
+      const croppedCanvas = OCRModule.cropForOCR(src, srcX, srcY, srcW, srcH);
+      const result = await OCRModule.performOCR(croppedCanvas);
+      OCRModule.stopCamera();
+
+      if (result.tokens.length > 0) {
+        addScanHistory({ text: result.text, tokenCount: result.tokens.length });
+        window._lastOCRResult = result;
+        window.navigateTo('analysis');
+      } else {
+        showToast('Seçili alanda metin bulunamadı. Tekrar deneyin.', 'search_off');
+        // Restart camera so user can try again
+        const video = document.getElementById('camera-video');
+        if (video) {
+          OCRModule.startCamera(video);
+          if (statusText) statusText.textContent = 'LIVE';
+          if (statusDot)  statusDot.classList.replace('bg-yellow-400', 'bg-primary');
+        }
+      }
+    });
+  }
+
+  // ============================================================
   //  PAGE: OCR CAMERA SCAN
   // ============================================================
   function renderScan() {
     appRoot().innerHTML = `
       <div class="page relative flex flex-col h-screen w-full bg-black overflow-hidden">
+
         <!-- Camera Video -->
         <video id="camera-video" class="absolute inset-0 w-full h-full object-cover z-0" playsinline autoplay muted></video>
-        <div class="absolute inset-0 bg-gradient-to-b from-black/40 via-transparent to-black/60 z-[1]"></div>
+
+        <!-- Capture Flash Overlay (white flash on shutter) -->
+        <div id="capture-flash" class="absolute inset-0 z-[25] pointer-events-none bg-white opacity-0"></div>
 
         <!-- Fallback (no camera) -->
         <div id="camera-fallback" class="absolute inset-0 w-full h-full z-0 hidden items-center justify-center bg-background-dark">
@@ -403,77 +638,139 @@ const UIModule = (() => {
         </div>
 
         <!-- Top Control Bar -->
-        <div class="absolute top-0 left-0 w-full z-20 pt-12 pb-4 px-6 flex justify-between items-center glass-panel rounded-b-3xl border-t-0 border-x-0">
-          <button id="scan-back-btn" class="p-2 rounded-full bg-black/20 hover:bg-black/40 transition-colors text-white">
-            <span class="material-symbols-outlined text-[28px]">arrow_back</span>
+        <div class="absolute top-0 left-0 w-full z-20 pt-12 pb-4 px-6 flex justify-between items-center">
+          <button id="scan-back-btn" class="p-2.5 rounded-full bg-black/40 backdrop-blur-sm border border-white/10 text-white active:scale-90 transition-transform">
+            <span class="material-symbols-outlined text-[24px]">arrow_back</span>
           </button>
-          <div class="flex items-center gap-2 px-4 py-1.5 rounded-full bg-black/40 backdrop-blur-sm border border-white/10">
+          <div class="flex items-center gap-2 px-4 py-1.5 rounded-full bg-black/50 backdrop-blur-sm border border-white/10">
             <span id="scan-status-dot" class="w-2 h-2 rounded-full bg-primary animate-pulse"></span>
-            <span id="scan-status-text" class="text-xs font-medium tracking-wide text-white/90">LIVE TEXT</span>
+            <span id="scan-status-text" class="text-[11px] font-bold tracking-widest text-white/90">LIVE</span>
           </div>
-          <button id="scan-flash-btn" class="p-2 rounded-full bg-black/20 hover:bg-black/40 transition-colors text-white">
-            <span class="material-symbols-outlined text-[28px]">flash_on</span>
+          <button id="scan-flash-btn" class="p-2.5 rounded-full bg-black/40 backdrop-blur-sm border border-white/10 text-white active:scale-90 transition-transform">
+            <span class="material-symbols-outlined text-[24px]">flash_on</span>
           </button>
         </div>
 
-        <!-- Focus Frame -->
-        <div class="relative z-10 w-full h-full flex flex-col justify-center items-center pb-32">
-          <div class="relative w-[85%] aspect-[3/4] max-w-sm rounded-3xl overflow-hidden">
-            <div class="absolute inset-0 bg-white/5 backdrop-blur-[1px] border border-white/20 rounded-3xl"></div>
-            <div class="absolute top-0 left-0 w-8 h-8 border-t-4 border-l-4 border-primary rounded-tl-2xl shadow-[0_0_10px_rgba(199,0,36,0.6)]"></div>
-            <div class="absolute top-0 right-0 w-8 h-8 border-t-4 border-r-4 border-primary rounded-tr-2xl shadow-[0_0_10px_rgba(199,0,36,0.6)]"></div>
-            <div class="absolute bottom-0 left-0 w-8 h-8 border-b-4 border-l-4 border-primary rounded-bl-2xl shadow-[0_0_10px_rgba(199,0,36,0.6)]"></div>
-            <div class="absolute bottom-0 right-0 w-8 h-8 border-b-4 border-r-4 border-primary rounded-br-2xl shadow-[0_0_10px_rgba(199,0,36,0.6)]"></div>
-            <div class="absolute inset-0 w-full h-full overflow-hidden rounded-3xl">
-              <div class="w-full h-32 scan-line absolute top-[-20%]"></div>
+        <!-- ─── Viewfinder ───
+             box-shadow: 0 0 0 100vmax rgba(0,0,0,N)  ← darkens everything OUTSIDE the frame
+             No background on the element → video shows through inside (clear view)
+        -->
+        <div class="relative z-10 w-full h-full flex flex-col justify-center items-center pb-28">
+          <div id="scan-frame"
+               class="relative rounded-3xl"
+               style="width:82%; max-width:340px; aspect-ratio:3/4;
+                      box-shadow: 0 0 0 100vmax rgba(0,0,0,0.72);">
+
+            <!-- Frame border -->
+            <div class="absolute inset-0 rounded-3xl border border-white/10 pointer-events-none"></div>
+
+            <!-- Crimson corner accents (glowing) -->
+            <div class="absolute top-0 left-0   w-9 h-9 border-t-[3px] border-l-[3px] border-primary rounded-tl-3xl" style="filter:drop-shadow(0 0 8px rgba(199,0,36,0.95))"></div>
+            <div class="absolute top-0 right-0  w-9 h-9 border-t-[3px] border-r-[3px] border-primary rounded-tr-3xl" style="filter:drop-shadow(0 0 8px rgba(199,0,36,0.95))"></div>
+            <div class="absolute bottom-0 left-0  w-9 h-9 border-b-[3px] border-l-[3px] border-primary rounded-bl-3xl" style="filter:drop-shadow(0 0 8px rgba(199,0,36,0.95))"></div>
+            <div class="absolute bottom-0 right-0 w-9 h-9 border-b-[3px] border-r-[3px] border-primary rounded-br-3xl" style="filter:drop-shadow(0 0 8px rgba(199,0,36,0.95))"></div>
+
+            <!-- Animated scan line (inside clipped container) -->
+            <div class="absolute inset-0 rounded-3xl overflow-hidden pointer-events-none">
+              <div class="w-full h-24 scan-line absolute top-[-20%]"></div>
             </div>
-            <div class="absolute inset-0 flex items-center justify-center pointer-events-none">
-              <div class="w-12 h-1 bg-white/30 rounded-full"></div>
-              <div class="h-12 w-1 bg-white/30 rounded-full absolute"></div>
+
+            <!-- Crosshair -->
+            <div class="absolute inset-0 flex items-center justify-center pointer-events-none opacity-20">
+              <div class="w-8 h-0.5 bg-white rounded-full"></div>
+              <div class="h-8 w-0.5 bg-white rounded-full absolute"></div>
             </div>
           </div>
-          <div class="mt-8 px-5 py-2.5 glass-panel rounded-full flex items-center gap-2 shadow-lg">
+
+          <!-- Hint label (above bottom bar, below frame) -->
+          <div class="mt-7 px-5 py-2 rounded-full bg-black/55 backdrop-blur-sm border border-white/10 flex items-center gap-2"
+               style="position:relative; z-index:20;">
             <span class="material-symbols-outlined text-primary text-sm">center_focus_strong</span>
-            <p class="text-sm font-medium text-white/90 tracking-wide">Metni kırmızı çerçeve içine hizalayın</p>
+            <p class="text-[11px] font-medium text-white/80 tracking-wide">Metni çerçeve içine hizalayın</p>
           </div>
         </div>
 
         <!-- Bottom Action Bar -->
-        <div class="absolute bottom-0 left-0 w-full z-20 pb-10 pt-20 px-8 bg-gradient-to-t from-black via-black/80 to-transparent flex items-end justify-between">
-          <!-- Gallery / Import -->
-          <div class="flex flex-col items-center gap-1">
-            <button id="scan-gallery-btn" class="relative w-14 h-14 rounded-2xl overflow-hidden border-2 border-white/20 hover:border-primary transition-colors bg-white/5 flex items-center justify-center">
+        <div class="absolute bottom-0 left-0 w-full z-20 pb-10 pt-14 px-8
+                    bg-gradient-to-t from-black via-black/80 to-transparent
+                    flex items-end justify-between">
+          <!-- Gallery -->
+          <div class="flex flex-col items-center gap-1.5">
+            <button id="scan-gallery-btn" class="w-14 h-14 rounded-2xl border-2 border-white/20 bg-black/40 backdrop-blur-sm flex items-center justify-center active:scale-90 transition-transform">
               <span class="material-symbols-outlined text-white/60 text-2xl">image</span>
             </button>
-            <span class="text-[10px] font-medium text-white/60 tracking-wider uppercase">Galeri</span>
+            <span class="text-[10px] text-white/50 uppercase tracking-wider">Galeri</span>
             <input type="file" id="scan-file-input" accept="image/*" class="hidden" />
           </div>
-          <!-- Primary Capture -->
-          <div class="relative -top-4">
-            <div class="absolute inset-0 bg-primary/30 rounded-full blur-xl animate-pulse"></div>
-            <button id="scan-capture-btn" class="relative w-24 h-24 rounded-full liquid-button flex items-center justify-center border-4 border-white/10 active:scale-95 transition-transform duration-100 group">
-              <div class="absolute inset-0 rounded-full border border-white/20"></div>
-              <span class="material-symbols-outlined text-white text-4xl drop-shadow-[0_2px_4px_rgba(0,0,0,0.3)] group-active:scale-90 transition-transform">filter_center_focus</span>
+
+          <!-- Shutter -->
+          <div class="relative -top-3">
+            <div class="absolute inset-0 bg-primary/40 rounded-full blur-xl animate-pulse"></div>
+            <button id="scan-capture-btn"
+                    class="relative liquid-button flex items-center justify-center border-4 border-white/20 active:scale-95 transition-transform duration-100 group"
+                    style="width:92px; height:92px; border-radius:50%;">
+              <span class="material-symbols-outlined text-white text-[40px] group-active:scale-90 transition-transform">photo_camera</span>
             </button>
           </div>
+
           <!-- History -->
-          <div class="flex flex-col items-center gap-1">
-            <button id="scan-history-btn" class="w-14 h-14 rounded-2xl bg-white/5 border border-white/10 backdrop-blur-md flex items-center justify-center hover:bg-white/10 transition-colors">
-              <span class="material-symbols-outlined text-white/90 text-2xl">history</span>
+          <div class="flex flex-col items-center gap-1.5">
+            <button id="scan-history-btn" class="w-14 h-14 rounded-2xl border border-white/10 bg-white/5 flex items-center justify-center active:scale-90 transition-transform">
+              <span class="material-symbols-outlined text-white/70 text-2xl">history</span>
             </button>
-            <span class="text-[10px] font-medium text-white/60 tracking-wider uppercase">Geçmiş</span>
+            <span class="text-[10px] text-white/50 uppercase tracking-wider">Geçmiş</span>
           </div>
         </div>
+
+        <!-- ══════════════════════════════════════════════
+             CROP SELECTION VIEW (shown after shutter press)
+             ══════════════════════════════════════════════ -->
+        <div id="crop-select-view" class="absolute inset-0 z-[30] hidden flex-col bg-black" style="animation: fadeIn 0.2s ease;">
+
+          <!-- Header -->
+          <div class="flex-shrink-0 flex items-center justify-between px-4 bg-black/95 border-b border-white/10"
+               style="padding-top: max(env(safe-area-inset-top, 0px), 48px); padding-bottom: 14px;">
+            <button id="crop-cancel-btn"
+                    class="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-white/8 border border-white/10 text-white/70 text-sm active:scale-95 transition-transform">
+              <span class="material-symbols-outlined text-base">close</span>
+              İptal
+            </button>
+            <div class="text-center">
+              <span class="text-white font-bold text-base block">Alan Seç</span>
+              <span class="text-white/35 text-[11px]">Taranacak bölgeyi işaretle</span>
+            </div>
+            <button id="crop-confirm-btn"
+                    class="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-primary border border-primary/50 text-white text-sm font-bold opacity-40 pointer-events-none active:scale-95 transition-transform">
+              <span class="material-symbols-outlined text-base">crop_free</span>
+              Tara
+            </button>
+          </div>
+
+          <!-- Interactive crop canvas (fills remaining height) -->
+          <div class="flex-1 relative overflow-hidden bg-black">
+            <canvas id="crop-canvas" class="w-full h-full" style="display:block; touch-action:none; cursor:crosshair;"></canvas>
+          </div>
+
+          <!-- Footer -->
+          <div class="flex-shrink-0 px-4 py-4 bg-black/95 border-t border-white/8 flex flex-col items-center gap-1">
+            <div class="flex items-center gap-2">
+              <span class="material-symbols-outlined text-primary text-base">touch_app</span>
+              <p id="crop-hint" class="text-white/60 text-sm">Sürükleyerek alan seçin</p>
+            </div>
+            <p class="text-white/28 text-xs">Küçük bölge seçmek OCR'yi hızlandırır ve doğruluğu artırır</p>
+          </div>
+        </div>
+
       </div>
     `;
     bindScanEvents();
   }
 
   function bindScanEvents() {
-    const video = document.getElementById('camera-video');
+    const video    = document.getElementById('camera-video');
     const fallback = document.getElementById('camera-fallback');
 
-    // Start camera
+    // ── Start camera ─────────────────────────────────────────
     OCRModule.startCamera(video).then(success => {
       if (!success) {
         video.classList.add('hidden');
@@ -482,6 +779,7 @@ const UIModule = (() => {
       }
     });
 
+    // ── Navigation ───────────────────────────────────────────
     document.getElementById('scan-back-btn')?.addEventListener('click', () => {
       OCRModule.stopCamera();
       window.navigateTo('home');
@@ -491,52 +789,32 @@ const UIModule = (() => {
       OCRModule.toggleFlash();
     });
 
-    document.getElementById('scan-capture-btn')?.addEventListener('click', async () => {
-      const captureBtn = document.getElementById('scan-capture-btn');
-      const statusText = document.getElementById('scan-status-text');
-      const statusDot  = document.getElementById('scan-status-dot');
-
-      // Disable button to prevent double-tap
-      captureBtn.style.pointerEvents = 'none';
-      captureBtn.style.opacity = '0.5';
-      statusText.textContent = 'TARANIYOR...';
-      statusDot.classList.add('bg-yellow-400');
-      statusDot.classList.remove('bg-primary');
-
-      try {
-        const canvas = OCRModule.captureFrame();
-        const result = await OCRModule.performOCR(canvas);
-
-        OCRModule.stopCamera();
-
-        if (result.tokens.length > 0) {
-          addScanHistory({ text: result.text, tokenCount: result.tokens.length });
-          window._lastOCRResult = result;
-          window.navigateTo('analysis');
-        } else {
-          // No text found — let user retry
-          captureBtn.style.pointerEvents = '';
-          captureBtn.style.opacity = '';
-          statusText.textContent = 'METİN BULUNAMADI';
-          statusDot.classList.remove('bg-yellow-400');
-          statusDot.classList.add('bg-red-500');
-          showToast('Metin tespit edilemedi. Tekrar deneyin.', 'search_off');
-          setTimeout(() => {
-            statusText.textContent = 'LIVE TEXT';
-            statusDot.classList.remove('bg-red-500');
-            statusDot.classList.add('bg-primary');
-          }, 2500);
-        }
-      } catch (err) {
-        console.error('[Scan] Capture error:', err);
-        captureBtn.style.pointerEvents = '';
-        captureBtn.style.opacity = '';
-        statusText.textContent = 'HATA';
-        showToast('Tarama hatası: ' + err.message, 'error');
-        setTimeout(() => { statusText.textContent = 'LIVE TEXT'; }, 2500);
-      }
+    document.getElementById('scan-history-btn')?.addEventListener('click', () => {
+      OCRModule.stopCamera();
+      window.navigateTo('history');
     });
 
+    // ── Shutter button ───────────────────────────────────────
+    document.getElementById('scan-capture-btn')?.addEventListener('click', () => {
+      const flash = document.getElementById('capture-flash');
+
+      // 1. White flash animation
+      flash.classList.remove('flash-anim');
+      void flash.offsetWidth; // force reflow to restart animation
+      flash.classList.add('flash-anim');
+
+      // 2. Capture full video frame
+      const captured = OCRModule.captureFullFrame();
+      if (!captured) {
+        showToast('Kamera görüntüsü alınamadı.', 'error');
+        return;
+      }
+
+      // 3. After flash settle, open crop view
+      setTimeout(() => _showCropView(captured), 230);
+    });
+
+    // ── Gallery / file import ────────────────────────────────
     document.getElementById('scan-gallery-btn')?.addEventListener('click', () => {
       document.getElementById('scan-file-input')?.click();
     });
@@ -544,29 +822,17 @@ const UIModule = (() => {
     document.getElementById('scan-file-input')?.addEventListener('change', async (e) => {
       const file = e.target.files[0];
       if (!file) return;
-
       try {
-        const result = await OCRModule.performOCRFromImage(file);
-        OCRModule.stopCamera();
-
-        if (result.tokens.length > 0) {
-          addScanHistory({ text: result.text, tokenCount: result.tokens.length });
-          window._lastOCRResult = result;
-          window.navigateTo('analysis');
-        } else {
-          showToast('Görselde metin tespit edilemedi.', 'search_off');
-        }
-      } catch (err) {
-        console.error('[Scan] Image OCR error:', err);
-        showToast('Görsel analiz hatası.', 'error');
+        const bitmap = await createImageBitmap(file);
+        const c = document.createElement('canvas');
+        c.width = bitmap.width;
+        c.height = bitmap.height;
+        c.getContext('2d').drawImage(bitmap, 0, 0);
+        _showCropView(c);
+      } catch {
+        showToast('Görsel yüklenemedi.', 'error');
       }
-      // Reset file input so same file can be selected again
       e.target.value = '';
-    });
-
-    document.getElementById('scan-history-btn')?.addEventListener('click', () => {
-      OCRModule.stopCamera();
-      window.navigateTo('history');
     });
   }
 

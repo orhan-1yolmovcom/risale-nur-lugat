@@ -73,7 +73,23 @@ const OCRModule = (() => {
     if (videoEl)     { videoEl.srcObject = null; videoEl = null; }
   }
 
-  // ── Frame capture with preprocessing ─────────────────────
+  // ── Frame capture: full frame (no crop) ───────────────────
+  /**
+   * Captures the entire video frame without any cropping or preprocessing.
+   * Used as source for the crop-selection UI.
+   */
+  function captureFullFrame() {
+    if (!videoEl) return null;
+    const vw = videoEl.videoWidth  || 640;
+    const vh = videoEl.videoHeight || 480;
+    const canvas = document.createElement('canvas');
+    canvas.width  = vw;
+    canvas.height = vh;
+    canvas.getContext('2d').drawImage(videoEl, 0, 0, vw, vh);
+    return canvas;
+  }
+
+  // ── Frame capture with preprocessing (legacy / fallback) ─
   function captureFrame() {
     if (!videoEl) return null;
     const vw = videoEl.videoWidth  || 640;
@@ -91,8 +107,39 @@ const OCRModule = (() => {
     const ctx = canvas.getContext('2d');
     ctx.drawImage(videoEl, sx, sy, cropW, cropH, 0, 0, cropW, cropH);
 
-    // Preprocessing: convert to greyscale + increase contrast
     _preprocessCanvas(ctx, cropW, cropH);
+    return canvas;
+  }
+
+  // ── Crop a source canvas to pixel rect + preprocess ───────
+  /**
+   * @param {HTMLCanvasElement} sourceCanvas  – full captured frame
+   * @param {number} x  – pixel x in source
+   * @param {number} y  – pixel y in source
+   * @param {number} w  – pixel width in source
+   * @param {number} h  – pixel height in source
+   * @returns {HTMLCanvasElement} cropped & preprocessed canvas ready for OCR
+   */
+  function cropForOCR(sourceCanvas, x, y, w, h) {
+    const sw = sourceCanvas.width;
+    const sh = sourceCanvas.height;
+    // Clamp to source bounds
+    x = Math.max(0, Math.min(x, sw - 1));
+    y = Math.max(0, Math.min(y, sh - 1));
+    w = Math.max(4, Math.min(w, sw - x));
+    h = Math.max(4, Math.min(h, sh - y));
+
+    const canvas = document.createElement('canvas');
+    canvas.width  = w;
+    canvas.height = h;
+    const ctx = canvas.getContext('2d');
+
+    // Draw selected region
+    ctx.drawImage(sourceCanvas, x, y, w, h, 0, 0, w, h);
+
+    // Fill outside area with white (already cropped so nothing outside)
+    // Preprocess for OCR accuracy
+    _preprocessCanvas(ctx, w, h);
     return canvas;
   }
 
@@ -210,7 +257,8 @@ const OCRModule = (() => {
   function _sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
   return {
-    startCamera, stopCamera, captureFrame,
+    startCamera, stopCamera,
+    captureFullFrame, captureFrame, cropForOCR,
     performOCR, performOCRFromImage,
     tokenize, toggleFlash, terminateWorker,
   };

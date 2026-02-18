@@ -138,6 +138,31 @@ body {
   animation: scan 3s infinite linear;
 }
 
+/* ---------- Capture Flash ---------- */
+@keyframes capture-flash {
+  0%   { opacity: 0; }
+  8%   { opacity: 0.92; }
+  100% { opacity: 0; }
+}
+.flash-anim {
+  animation: capture-flash 0.55s ease-out forwards !important;
+}
+
+/* ---------- Camera zoom-out on capture ---------- */
+@keyframes cam-zoom-out {
+  from { transform: scale(1.07); }
+  to   { transform: scale(1); }
+}
+.cam-zoom-out { animation: cam-zoom-out 0.4s ease-out forwards; }
+
+/* ---------- Crop canvas ---------- */
+#crop-canvas {
+  cursor: crosshair;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
 /* ---------- Crimson Glow ---------- */
 .crimson-glow {
   box-shadow: 0 0 15px rgba(199, 0, 36, 0.6);
