@@ -673,17 +673,18 @@ const UIModule = (() => {
         alphaCtx.drawImage(maskCss, 0, 0);
         alphaCtx.setTransform(1, 0, 0, 1, 0, 0);
 
-        // 4) Darken everything outside the selected brush area
+        // 4) Make everything outside the selected brush area pure black
         const img = outCtx.getImageData(0, 0, out.width, out.height);
         const sel = alphaCtx.getImageData(0, 0, out.width, out.height);
         const p = img.data;
         const s = sel.data;
         for (let i = 0; i < p.length; i += 4) {
           const a = s[i + 3];
-          if (a < 22) {
-            p[i] = Math.round(p[i] * 0.08);
-            p[i + 1] = Math.round(p[i + 1] * 0.08);
-            p[i + 2] = Math.round(p[i + 2] * 0.08);
+          if (a < 26) {
+            p[i] = 0;
+            p[i + 1] = 0;
+            p[i + 2] = 0;
+            p[i + 3] = 255;
           }
         }
         outCtx.putImageData(img, 0, 0);
@@ -767,6 +768,19 @@ const UIModule = (() => {
         ctx.translate(-dispW / 2, -dispH / 2);
 
         ctx.drawImage(srcCanvas, iX, iY, iW, iH);
+
+        // Outside selected brush area becomes black (visual focus mode)
+        if (undoStack.length > 0 || drawing) {
+          ctx.save();
+          ctx.fillStyle = 'rgba(0, 0, 0, 0.97)';
+          ctx.fillRect(0, 0, dispW, dispH);
+          ctx.globalCompositeOperation = 'destination-out';
+          ctx.globalAlpha = 1;
+          ctx.drawImage(maskC, 0, 0, dispW, dispH);
+          ctx.drawImage(strkC, 0, 0, dispW, dispH);
+          ctx.restore();
+        }
+
         // Single-line constraint visual guide
         if (lineY !== null) {
           const band = Math.max(brushR * 2.5, 30);
@@ -1223,7 +1237,7 @@ const UIModule = (() => {
             </div>
             <div class="flex items-center gap-2 mb-4">
               <span class="material-symbols-outlined text-primary text-lg">auto_awesome</span>
-              <span class="text-white/60 text-sm font-semibold tracking-wide">Bunu mu demek istediniz?</span>
+              <span class="text-white/60 text-sm font-semibold tracking-wide">Aradığınız bu mu?</span>
             </div>
             <div id="quick-suggest-content" class="max-h-[40vh] overflow-y-auto"></div>
             <div class="flex gap-3 mt-4">
