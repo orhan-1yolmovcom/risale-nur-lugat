@@ -798,11 +798,8 @@ const UIModule = (() => {
           ctx.stroke();
           ctx.restore();
         }
-        ctx.drawImage(maskC, 0, 0, dispW, dispH);
-        ctx.save();
-        ctx.globalAlpha = STROKE_ALPHA;
-        ctx.drawImage(strkC, 0, 0, dispW, dispH);
-        ctx.restore();
+        // Keep selected region as original image; no purple fill overlay.
+        // (Mask is used only for cutting out non-selected area above.)
         ctx.restore();
 
         if (viewScale > 1.01) {
@@ -948,7 +945,8 @@ const UIModule = (() => {
         if (e && !e.isPrimary) return;
         drawing = false;
         maskCtx.save();
-        maskCtx.globalAlpha = STROKE_ALPHA;
+        // Commit as solid alpha mask so the selected area is fully kept visible.
+        maskCtx.globalAlpha = 1;
         maskCtx.drawImage(strkC, 0, 0, dispW, dispH);
         maskCtx.restore();
         strkCtx.clearRect(0, 0, physW, physH);
