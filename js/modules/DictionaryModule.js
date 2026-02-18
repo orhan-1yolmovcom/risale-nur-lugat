@@ -100,7 +100,7 @@ export class DictionaryModule {
             },
             "nur": {
                 "word": "nur",
-                "meaning": "Işık, aydınlık, ışık",
+                "meaning": "Işık, aydınlık",
                 "examples": ["Nur gibi parlak"],
                 "root": "nur"
             },
@@ -128,24 +128,8 @@ export class DictionaryModule {
         // Remove extra whitespace
         word = word.trim();
         
-        // Turkish character handling
-        const turkishMap = {
-            'ı': 'i',
-            'ğ': 'g',
-            'ü': 'u',
-            'ş': 's',
-            'ö': 'o',
-            'ç': 'c',
-            'İ': 'i',
-            'Ğ': 'g',
-            'Ü': 'u',
-            'Ş': 's',
-            'Ö': 'o',
-            'Ç': 'c'
-        };
-        
-        // Option: Keep Turkish characters (don't normalize them)
-        // This is better for Turkish dictionary
+        // Note: We keep Turkish characters intact for better dictionary matching
+        // Normalization of Turkish characters is not needed for this use case
         
         return word;
     }
