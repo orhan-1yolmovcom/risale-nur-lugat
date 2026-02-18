@@ -985,7 +985,8 @@ const UIModule = (() => {
   //  PAGE: TEXT ANALYSIS RESULT
   // ============================================================
   function renderAnalysis() {
-    const result = window._lastOCRResult || { text: 'OCR sonucu bulunamadı.', tokens: [] };
+    const result = window._lastOCRResult || { text: 'OCR sonucu bulunamadı.', tokens: [], wordsFound: [] };
+    const wordsFound = result.wordsFound || [];
     appRoot().innerHTML = `
       <div class="page relative flex flex-col min-h-screen w-full max-w-md mx-auto liquid-gradient-bg">
         <div class="fixed top-[-10%] left-[-10%] w-[400px] h-[400px] bg-primary/15 rounded-full blur-[100px] opacity-40 pointer-events-none"></div>
@@ -1013,11 +1014,38 @@ const UIModule = (() => {
             </div>
           </div>
 
+          <!-- Found Words from Dictionary -->
+          ${wordsFound.length > 0 ? `
+            <div class="px-4 mb-4">
+              <div class="flex items-center gap-2 mb-3 ml-1">
+                <span class="material-symbols-outlined text-primary text-lg">auto_stories</span>
+                <span class="text-xs text-white/40 uppercase tracking-widest font-semibold">Lügatta Bulunan — ${wordsFound.length} kelime</span>
+              </div>
+              <div class="space-y-2">
+                ${wordsFound.map(w => `
+                  <button class="found-word-item w-full text-left glass-card rounded-2xl p-4 flex items-center gap-3 group" data-word="${w.word}">
+                    <div class="flex-shrink-0 w-10 h-10 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center">
+                      <span class="material-symbols-outlined text-primary text-[18px]">book_2</span>
+                    </div>
+                    <div class="flex-1 min-w-0">
+                      <div class="flex items-baseline gap-2">
+                        <span class="text-white font-bold text-sm">${w.word}</span>
+                        ${w.root ? `<span class="text-[10px] text-white/25 font-medium">· ${w.root}</span>` : ''}
+                      </div>
+                      <span class="block text-white/45 text-xs leading-snug mt-0.5 line-clamp-2">${w.meaning ? w.meaning.substring(0, 100) : ''}</span>
+                    </div>
+                    <span class="material-symbols-outlined text-white/20 group-hover:text-primary text-xl flex-shrink-0 transition-colors">chevron_right</span>
+                  </button>
+                `).join('')}
+              </div>
+            </div>
+          ` : ''}
+
           <!-- Token Selection -->
           <div class="px-4 flex-1">
             <div class="flex items-center gap-2 mb-3 ml-1">
               <span class="material-symbols-outlined text-primary text-lg">token</span>
-              <span class="text-xs text-white/40 uppercase tracking-widest font-semibold">Kelimeler — Seçmek için dokunun</span>
+              <span class="text-xs text-white/40 uppercase tracking-widest font-semibold">Tüm Kelimeler — Seçmek için dokunun</span>
             </div>
             <div class="flex flex-wrap gap-2" id="token-list">
               ${result.tokens.map((t, i) => `
@@ -1044,6 +1072,15 @@ const UIModule = (() => {
   function bindAnalysisEvents() {
     document.getElementById('analysis-back-btn')?.addEventListener('click', () => window.navigateTo('home'));
     document.getElementById('analysis-rescan-btn')?.addEventListener('click', () => window.navigateTo('scan'));
+
+    // Found words — direct click to modal
+    document.querySelectorAll('.found-word-item').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const word = btn.getAttribute('data-word');
+        const result = DictionaryModule.lookup(word);
+        if (result.found) showWordModal(result.entry, result.entries);
+      });
+    });
 
     document.querySelectorAll('.token-chip').forEach(chip => {
       chip.addEventListener('click', () => {

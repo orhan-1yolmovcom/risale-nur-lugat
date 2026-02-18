@@ -317,13 +317,15 @@ const OCRModule = (() => {
             {
               role: 'system',
               content:
-                'Sen minimal çıktılar üreten, düşük token kullanarak çalışan bir OCR ve metin ayrıştırma asistanısın.\n' +
-                'Görevin sadece şunlardır:\n' +
-                '1. Görüntüdeki tüm metni oku.\n' +
-                '2. Türkçe/Osmanlıca kelimeleri ayıkla.\n' +
-                '3. Kelimeleri satır satır ve kelime kelime JSON formatında döndür.\n' +
-                '4. Ek yorum, açıklama, analiz veya tahmin yapma.\n' +
-                '5. Çıkış tamamen sade olmalı, sadece işlenebilir veri üretmelisin.',
+                'Sen gelişmiş bir OCR Asistanısın.\n' +
+                'Görevin yalnızca görseldeki metni okumak ve JSON formatında döndürmektir.\n' +
+                'Kurallar:\n' +
+                '1. Görseldeki tüm metni en yüksek doğrulukla çıkart.\n' +
+                '2. Harf düzeltme, yorum, tahmin veya açıklama yapma.\n' +
+                '3. Sadece gördüğün kelimeleri ham şekilde çıkar.\n' +
+                '4. Osmanlıca/Türkçe ayrımı yapma, gördüğün gibi yaz.\n' +
+                '5. Metni mümkün olduğunca satır bazlı çıkar.\n' +
+                '6. SADECE JSON döndür — başka hiçbir şey yazma.',
             },
             {
               role: 'user',
@@ -331,8 +333,8 @@ const OCRModule = (() => {
                 {
                   type: 'text',
                   text:
-                    'Aşağıdaki görseldeki metni oku ve SADECE şu JSON formatında cevap ver — başka hiçbir şey yazma:\n\n' +
-                    '{"full_text":"...tam metin...","lines":[["kelime1","kelime2"],["kelime1","kelime2"]]}\n\n' +
+                    'Aşağıdaki görseldeki metni oku. YALNIZCA şu JSON formatında yanıt ver — başka hiçbir şey yazma:\n\n' +
+                    '{"full_text":"OCR ile elde edilen tam metin","lines":[["kelime1","kelime2"],["kelime3","kelime4"]]}\n\n' +
                     '- Kelimeleri normalize etme.\n' +
                     '- Harf düzeltme yapma.\n' +
                     '- Osmanlıca-Türkçe ayırma.\n' +
@@ -365,6 +367,32 @@ const OCRModule = (() => {
       const lines  = parsed.lines;
       const tokens = lines.flat();
 
+      // ── Build words_found via JS dictionary lookup (free, O(1)) ──
+      _setProgress(92, 'Lügat eşleştiriliyor...', `${tokens.length} kelime taranıyor`);
+      const wordsFound = [];
+      const seenWords  = new Set();
+      for (const token of tokens) {
+        if (!token || token.length < 2) continue;
+        let lookup;
+        try { lookup = (typeof DictionaryModule !== 'undefined') ? DictionaryModule.lookup(token) : null; }
+        catch (_) { lookup = null; }
+        if (!lookup || !lookup.found) continue;
+        const entries = lookup.entries || [lookup.entry];
+        for (const e of entries) {
+          const key = (e.word || '').toUpperCase();
+          if (seenWords.has(key)) continue;
+          seenWords.add(key);
+          wordsFound.push({
+            word:     e.word     || '',
+            meaning:  e.meaning  || '',
+            root:     e.stem     || '',
+            example:  '',
+            synonyms: [],
+          });
+        }
+      }
+      console.info(`[GPT-OCR] Lügat eşleşmesi: ${wordsFound.length} kelime bulundu`);
+
       // Usage info (nice for debugging)
       const usage = data.usage || {};
       console.info(
@@ -372,11 +400,11 @@ const OCRModule = (() => {
       );
       console.info('[GPT-OCR] Metinler böyle (ilk 20 token):', tokens.slice(0, 20));
 
-      _setProgress(100, 'Tamamlandı!', `${tokens.length} kelime · ${usage.total_tokens || '?'} token`);
+      _setProgress(100, 'Tamamlandı!', `${wordsFound.length} lügat eşleşmesi · ${usage.total_tokens || '?'} token`);
       await _sleep(400);
       _hideOverlay();
 
-      return { text: text || 'Metin tespit edilemedi.', tokens, lines };
+      return { text: text || 'Metin tespit edilemedi.', tokens, lines, wordsFound };
 
     } catch (err) {
       console.error('[OCRModule] GPT OCR error:', err);
