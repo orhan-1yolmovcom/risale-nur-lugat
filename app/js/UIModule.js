@@ -659,11 +659,14 @@ const UIModule = (() => {
         outCtx.drawImage(srcCanvas, cropX, cropY, cropW, cropH, 0, 0, out.width, out.height);
 
         // 2) Convert brush mask to CSS-pixel space
+        // IMPORTANT: maskC is stored at physical resolution (physW × physH).
+        // We must use physW/physH as the source dimensions, not dispW/dispH.
+        // On DPR=3 devices, using dispW/dispH would only read 1/9 of the canvas.
         const maskCss = document.createElement('canvas');
         maskCss.width = Math.max(1, Math.round(dispW));
         maskCss.height = Math.max(1, Math.round(dispH));
         const maskCssCtx = maskCss.getContext('2d');
-        maskCssCtx.drawImage(maskC, 0, 0, dispW, dispH, 0, 0, maskCss.width, maskCss.height);
+        maskCssCtx.drawImage(maskC, 0, 0, physW, physH, 0, 0, maskCss.width, maskCss.height);
 
         // 3) Reproject mask from display-space to cropped source-space
         const alphaCanvas = document.createElement('canvas');
