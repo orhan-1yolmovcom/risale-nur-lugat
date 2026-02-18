@@ -384,235 +384,241 @@ const UIModule = (() => {
   }
 
   // ============================================================
-  //  PAGE: OCR CAMERA SCAN  — helper: draw crop canvas state
+  //  PAGE: OCR CAMERA SCAN  — brush-based area selector helpers
   // ============================================================
 
   /**
-   * Re-draws the crop canvas with the captured image and an optional
-   * selection rectangle overlay.
+   * Scans the mask canvas (physical pixel space) and returns the
+   * bounding box of all painted pixels in CSS-pixel coordinates.
+   * Returns null if nothing has been painted.
    */
-  function _drawCropState(ctx, srcCanvas, layout, sel) {
-    const { dispW, dispH, imgDrawW, imgDrawH, imgOffX, imgOffY } = layout;
-    ctx.clearRect(0, 0, dispW, dispH);
-
-    // Black letterbox bars
-    ctx.fillStyle = '#000';
-    ctx.fillRect(0, 0, dispW, dispH);
-
-    // Draw the captured image (letterboxed)
-    ctx.drawImage(srcCanvas, imgOffX, imgOffY, imgDrawW, imgDrawH);
-
-    if (sel && sel.w > 4 && sel.h > 4) {
-      // Darken everything outside the selection
-      ctx.fillStyle = 'rgba(0, 0, 0, 0.60)';
-      ctx.fillRect(imgOffX, imgOffY, imgDrawW, imgDrawH);
-
-      // Restore the selected region (clear dark overlay, redraw image)
-      ctx.save();
-      ctx.beginPath();
-      ctx.rect(sel.x, sel.y, sel.w, sel.h);
-      ctx.clip();
-      ctx.drawImage(srcCanvas, imgOffX, imgOffY, imgDrawW, imgDrawH);
-      ctx.restore();
-
-      // Crimson selection border
-      ctx.strokeStyle = '#c70024';
-      ctx.lineWidth = 2.5;
-      ctx.setLineDash([]);
-      ctx.strokeRect(sel.x + 1, sel.y + 1, sel.w - 2, sel.h - 2);
-
-      // Corner dot handles
-      ctx.fillStyle = '#c70024';
-      [[sel.x, sel.y], [sel.x + sel.w, sel.y],
-       [sel.x, sel.y + sel.h], [sel.x + sel.w, sel.y + sel.h]].forEach(([hx, hy]) => {
-        ctx.beginPath();
-        ctx.arc(hx, hy, 6, 0, Math.PI * 2);
-        ctx.fill();
-      });
-
-      // Selection size hint (top-left corner)
-      const wPx = Math.round(sel.w);
-      const hPx = Math.round(sel.h);
-      ctx.fillStyle = 'rgba(199,0,36,0.85)';
-      ctx.font = 'bold 11px Inter, sans-serif';
-      ctx.fillText(`${wPx} × ${hPx}`, sel.x + 6, sel.y - 5 < 14 ? sel.y + 16 : sel.y - 5);
+  function _getBrushBoundingBox(maskCanvas, dpr) {
+    const w    = maskCanvas.width;
+    const h    = maskCanvas.height;
+    const data = maskCanvas.getContext('2d').getImageData(0, 0, w, h).data;
+    let minX = w, minY = h, maxX = 0, maxY = 0, found = false;
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        if (data[(y * w + x) * 4 + 3] > 8) {
+          if (x < minX) minX = x;
+          if (x > maxX) maxX = x;
+          if (y < minY) minY = y;
+          if (y > maxY) maxY = y;
+          found = true;
+        }
+      }
     }
+    if (!found) return null;
+    const pad = 14 * dpr; // padding in physical pixels
+    return {
+      x: Math.max(0, (minX - pad) / dpr),
+      y: Math.max(0, (minY - pad) / dpr),
+      w: Math.min(maskCanvas.width / dpr, (maxX - minX + pad * 2) / dpr),
+      h: Math.min(maskCanvas.height / dpr, (maxY - minY + pad * 2) / dpr),
+    };
   }
 
   /**
-   * Shows the crop-selection overlay with the captured canvas.
-   * Wires up all interaction (draw rectangle) and confirm/cancel buttons.
+   * Opens the brush-selection overlay with srcCanvas as the frozen background.
+   * User paints over the area they want to OCR.
    */
-  function _showCropView(srcCanvas) {
-    const cropView   = document.getElementById('crop-select-view');
-    const cropCanvas = document.getElementById('crop-canvas');
+  function _showBrushView(srcCanvas) {
+    const view       = document.getElementById('crop-select-view');
+    const canvasEl   = document.getElementById('brush-canvas');
     const confirmBtn = document.getElementById('crop-confirm-btn');
     const cancelBtn  = document.getElementById('crop-cancel-btn');
-    const hintEl     = document.getElementById('crop-hint');
+    const undoBtn    = document.getElementById('brush-undo-btn');
+    const clearBtn   = document.getElementById('brush-clear-btn');
+    const hintEl     = document.getElementById('brush-hint');
 
-    cropView.classList.remove('hidden');
-    cropView.classList.add('flex');
+    // Reset state
+    hintEl.textContent = 'Parmağınızla metni üzerinde gezdirin';
+    confirmBtn.classList.add('opacity-40', 'pointer-events-none');
+    view.classList.remove('hidden');
+    view.classList.add('flex');
 
-    // Wait one frame so the element has its final layout dimensions
     requestAnimationFrame(() => {
-      const dpr  = window.devicePixelRatio || 1;
-      const rect = cropCanvas.getBoundingClientRect();
+      const dpr   = window.devicePixelRatio || 1;
+      const rect  = canvasEl.getBoundingClientRect();
       const dispW = rect.width;
       const dispH = rect.height;
 
-      cropCanvas.width  = Math.round(dispW  * dpr);
-      cropCanvas.height = Math.round(dispH * dpr);
+      // ── Physical-resolution canvas ──────────────────────────
+      const physW = Math.round(dispW * dpr);
+      const physH = Math.round(dispH * dpr);
 
-      const ctx = cropCanvas.getContext('2d');
+      // Clone canvas to wipe out any previous event listeners
+      const fc  = canvasEl.cloneNode(false);
+      canvasEl.parentNode.replaceChild(fc, canvasEl);
+      fc.width  = physW;
+      fc.height = physH;
+      fc.style.width  = dispW + 'px';
+      fc.style.height = dispH + 'px';
+      fc.style.touchAction  = 'none';
+      fc.style.cursor       = 'crosshair';
+      fc.style.userSelect   = 'none';
+
+      const ctx = fc.getContext('2d');
       ctx.scale(dpr, dpr);
 
-      // Letterbox: fit source image inside display area
+      // ── Letterbox the source image ──────────────────────────
       const imgAspect  = srcCanvas.width / srcCanvas.height;
       const dispAspect = dispW / dispH;
-      let imgDrawW, imgDrawH, imgOffX, imgOffY;
-      if (imgAspect > dispAspect) {
-        imgDrawW = dispW;
-        imgDrawH = dispW / imgAspect;
-      } else {
-        imgDrawH = dispH;
-        imgDrawW = dispH * imgAspect;
+      let iW, iH, iX, iY;
+      if (imgAspect > dispAspect) { iW = dispW;  iH = dispW / imgAspect; }
+      else                        { iH = dispH;  iW = dispH * imgAspect; }
+      iX = (dispW - iW) / 2;
+      iY = (dispH - iH) / 2;
+
+      // ── Offscreen mask canvas (accumulates all brush strokes) ─
+      const maskC   = document.createElement('canvas');
+      maskC.width   = physW;
+      maskC.height  = physH;
+      const maskCtx = maskC.getContext('2d');
+      maskCtx.scale(dpr, dpr);
+
+      const BRUSH_R   = Math.max(22, Math.min(52, dispW * 0.075)); // ~7.5% of width
+      const BRUSH_CLR = 'rgba(139, 92, 246, 0.30)';                // violet-500 @30%
+
+      // ── Stroke history stack (for undo) ─────────────────────
+      // Each entry = ImageData snapshot taken BEFORE the stroke begins
+      let strokes = [];
+      let drawing = false, lx = 0, ly = 0;
+
+      // ── Composite: photo base + mask overlay ─────────────────
+      function render() {
+        ctx.clearRect(0, 0, dispW, dispH);
+        ctx.fillStyle = '#000';
+        ctx.fillRect(0, 0, dispW, dispH);
+        ctx.drawImage(srcCanvas, iX, iY, iW, iH);
+        // Draw mask overlay on top
+        ctx.drawImage(maskC, 0, 0, dispW, dispH);
       }
-      imgOffX = (dispW - imgDrawW) / 2;
-      imgOffY = (dispH - imgDrawH) / 2;
 
-      const layout = { dispW, dispH, imgDrawW, imgDrawH, imgOffX, imgOffY };
-      cropCanvas._layout    = layout;
-      cropCanvas._srcCanvas = srcCanvas;
-      cropCanvas._selection = null;
+      render(); // initial: just the frozen photo
 
-      // Initial render (no selection yet)
-      _drawCropState(ctx, srcCanvas, layout, null);
-
-      // ── Interaction ──────────────────────────────────────────
-      let isDrawing = false;
-      let startX = 0, startY = 0;
-
-      function getPos(e) {
-        const cr  = cropCanvas.getBoundingClientRect();
-        const src = e.touches ? e.touches[0] : e;
-        return { x: src.clientX - cr.left, y: src.clientY - cr.top };
-      }
-
-      function onStart(e) {
+      // ── Pointer events (mouse + touch unified) ────────────────
+      fc.addEventListener('pointerdown', e => {
         e.preventDefault();
-        const p = getPos(e);
-        startX = p.x; startY = p.y;
-        isDrawing = true;
-        cropCanvas._selection = null;
+        fc.setPointerCapture(e.pointerId); // track even outside canvas
+        drawing = true;
+        const r = fc.getBoundingClientRect();
+        lx = e.clientX - r.left;
+        ly = e.clientY - r.top;
+
+        // Save snapshot before this new stroke (for undo)
+        strokes.push(maskCtx.getImageData(0, 0, physW, physH));
+        if (strokes.length > 30) strokes.shift();
+
+        // Initial dot at touch point
+        maskCtx.fillStyle = BRUSH_CLR;
+        maskCtx.beginPath();
+        maskCtx.arc(lx, ly, BRUSH_R, 0, Math.PI * 2);
+        maskCtx.fill();
+        render();
+      });
+
+      fc.addEventListener('pointermove', e => {
+        if (!drawing) return;
+        e.preventDefault();
+        const r = fc.getBoundingClientRect();
+        const cx = e.clientX - r.left;
+        const cy = e.clientY - r.top;
+
+        // Paint a filled capsule from last point to current point
+        maskCtx.globalCompositeOperation = 'source-over';
+        maskCtx.strokeStyle = BRUSH_CLR;
+        maskCtx.fillStyle   = BRUSH_CLR;
+        maskCtx.lineWidth   = BRUSH_R * 2;
+        maskCtx.lineCap     = 'round';
+        maskCtx.lineJoin    = 'round';
+
+        maskCtx.beginPath();
+        maskCtx.moveTo(lx, ly);
+        maskCtx.lineTo(cx, cy);
+        maskCtx.stroke();
+
+        // Filled circle at current tip for smooth edges
+        maskCtx.beginPath();
+        maskCtx.arc(cx, cy, BRUSH_R, 0, Math.PI * 2);
+        maskCtx.fill();
+
+        render();
+        lx = cx; ly = cy;
+      });
+
+      function endStroke() {
+        if (!drawing) return;
+        drawing = false;
+        confirmBtn.classList.remove('opacity-40', 'pointer-events-none');
+        hintEl.textContent = '✓ Alan işaretlendi — devam edebilir veya tarayabilirsiniz';
+      }
+      fc.addEventListener('pointerup',     endStroke);
+      fc.addEventListener('pointercancel', endStroke);
+
+      // ── Button handlers (onclick avoids stacking on re-open) ──
+      undoBtn.onclick = () => {
+        if (!strokes.length) return;
+        maskCtx.putImageData(strokes.pop(), 0, 0);
+        render();
+        if (!strokes.length) {
+          confirmBtn.classList.add('opacity-40', 'pointer-events-none');
+          hintEl.textContent = 'Parmağınızla metni üzerinde gezdirin';
+        }
+      };
+
+      clearBtn.onclick = () => {
+        strokes = [];
+        maskCtx.clearRect(0, 0, physW, physH);
+        render();
         confirmBtn.classList.add('opacity-40', 'pointer-events-none');
-      }
+        hintEl.textContent = 'Parmağınızla metni üzerinde gezdirin';
+      };
 
-      function onMove(e) {
-        e.preventDefault();
-        if (!isDrawing) return;
-        const p = getPos(e);
-        const sel = {
-          x: Math.min(startX, p.x),
-          y: Math.min(startY, p.y),
-          w: Math.abs(p.x - startX),
-          h: Math.abs(p.y - startY),
-        };
-        _drawCropState(ctx, srcCanvas, layout, sel);
-        cropCanvas._selection = sel;
-      }
+      cancelBtn.onclick = () => {
+        view.classList.add('hidden');
+        view.classList.remove('flex');
+      };
 
-      function onEnd(e) {
-        if (!isDrawing) return;
-        isDrawing = false;
-        const sel = cropCanvas._selection;
-        if (sel && sel.w > 18 && sel.h > 18) {
-          confirmBtn.classList.remove('opacity-40', 'pointer-events-none');
-          hintEl.textContent = '✓ Seçim hazır — tekrar çizebilir veya "Tara"ya basabilirsiniz';
+      confirmBtn.onclick = async () => {
+        const bb = _getBrushBoundingBox(maskC, dpr);
+        if (!bb) { showToast('Lütfen önce bir alan boyayın.', 'brush'); return; }
+
+        view.classList.add('hidden');
+        view.classList.remove('flex');
+
+        const st = document.getElementById('scan-status-text');
+        const sd = document.getElementById('scan-status-dot');
+        if (st) st.textContent = 'İŞLENİYOR';
+        if (sd) { sd.classList.remove('bg-primary'); sd.classList.add('bg-yellow-400'); }
+
+        // Map CSS display-coords → source image pixel-coords
+        const scaleX  = srcCanvas.width  / iW;
+        const scaleY  = srcCanvas.height / iH;
+        const cropX   = Math.round((bb.x - iX) * scaleX);
+        const cropY   = Math.round((bb.y - iY) * scaleY);
+        const cropW   = Math.round(bb.w * scaleX);
+        const cropH   = Math.round(bb.h * scaleY);
+
+        const cropped = OCRModule.cropForOCR(srcCanvas, cropX, cropY, cropW, cropH);
+        const result  = await OCRModule.performOCR(cropped);
+        OCRModule.stopCamera();
+
+        if (result.tokens.length > 0) {
+          addScanHistory({ text: result.text, tokenCount: result.tokens.length });
+          window._lastOCRResult = result;
+          window.navigateTo('analysis');
         } else {
-          cropCanvas._selection = null;
-          _drawCropState(ctx, srcCanvas, layout, null);
-          hintEl.textContent = 'Daha büyük bir alan seçin';
+          showToast('Seçili alanda metin bulunamadı. Tekrar deneyin.', 'search_off');
+          const vid = document.getElementById('camera-video');
+          if (vid) {
+            OCRModule.startCamera(vid);
+            if (st) st.textContent = 'LIVE';
+            if (sd) { sd.classList.remove('bg-yellow-400'); sd.classList.add('bg-primary'); }
+          }
         }
-      }
-
-      // Clean up old listeners by cloning the canvas (prevents duplicates on re-open)
-      const freshCanvas = cropCanvas.cloneNode(true);
-      freshCanvas.width  = cropCanvas.width;
-      freshCanvas.height = cropCanvas.height;
-      cropCanvas.parentNode.replaceChild(freshCanvas, cropCanvas);
-
-      // Re-draw on the fresh canvas
-      const freshCtx = freshCanvas.getContext('2d');
-      freshCtx.scale(dpr, dpr);
-      freshCanvas._layout    = layout;
-      freshCanvas._srcCanvas = srcCanvas;
-      freshCanvas._selection = null;
-      _drawCropState(freshCtx, srcCanvas, layout, null);
-
-      freshCanvas.addEventListener('mousedown',  onStart);
-      freshCanvas.addEventListener('mousemove',  onMove);
-      freshCanvas.addEventListener('mouseup',    onEnd);
-      freshCanvas.addEventListener('touchstart', onStart, { passive: false });
-      freshCanvas.addEventListener('touchmove',  onMove,  { passive: false });
-      freshCanvas.addEventListener('touchend',   onEnd);
-    });
-
-    // ── Cancel ───────────────────────────────────────────────
-    const newCancel = cancelBtn.cloneNode(true);
-    cancelBtn.parentNode.replaceChild(newCancel, cancelBtn);
-    newCancel.addEventListener('click', () => {
-      cropView.classList.add('hidden');
-      cropView.classList.remove('flex');
-      document.getElementById('crop-hint').textContent = 'Sürükleyerek alan seçin';
-      document.getElementById('crop-confirm-btn').classList.add('opacity-40', 'pointer-events-none');
-    });
-
-    // ── Confirm: crop → OCR ───────────────────────────────────
-    const newConfirm = confirmBtn.cloneNode(true);
-    confirmBtn.parentNode.replaceChild(newConfirm, confirmBtn);
-    newConfirm.addEventListener('click', async () => {
-      const canvas = document.getElementById('crop-canvas');
-      const sel    = canvas._selection;
-      const src    = canvas._srcCanvas;
-      const layout = canvas._layout;
-      if (!sel || !src || !layout) return;
-
-      // Map display coords → source pixel coords
-      const scaleX = src.width  / layout.imgDrawW;
-      const scaleY = src.height / layout.imgDrawH;
-      const srcX = Math.round((sel.x - layout.imgOffX) * scaleX);
-      const srcY = Math.round((sel.y - layout.imgOffY) * scaleY);
-      const srcW = Math.round(sel.w * scaleX);
-      const srcH = Math.round(sel.h * scaleY);
-
-      // Hide crop view & show processing status
-      cropView.classList.add('hidden');
-      cropView.classList.remove('flex');
-      const statusText = document.getElementById('scan-status-text');
-      const statusDot  = document.getElementById('scan-status-dot');
-      if (statusText) { statusText.textContent = 'İŞLENİYOR'; }
-      if (statusDot)  { statusDot.classList.replace('bg-primary', 'bg-yellow-400'); }
-
-      // Crop selected area and run OCR
-      const croppedCanvas = OCRModule.cropForOCR(src, srcX, srcY, srcW, srcH);
-      const result = await OCRModule.performOCR(croppedCanvas);
-      OCRModule.stopCamera();
-
-      if (result.tokens.length > 0) {
-        addScanHistory({ text: result.text, tokenCount: result.tokens.length });
-        window._lastOCRResult = result;
-        window.navigateTo('analysis');
-      } else {
-        showToast('Seçili alanda metin bulunamadı. Tekrar deneyin.', 'search_off');
-        // Restart camera so user can try again
-        const video = document.getElementById('camera-video');
-        if (video) {
-          OCRModule.startCamera(video);
-          if (statusText) statusText.textContent = 'LIVE';
-          if (statusDot)  statusDot.classList.replace('bg-yellow-400', 'bg-primary');
-        }
-      }
-    });
+      };
+    }); // end requestAnimationFrame
   }
 
   // ============================================================
@@ -723,41 +729,53 @@ const UIModule = (() => {
         </div>
 
         <!-- ══════════════════════════════════════════════
-             CROP SELECTION VIEW (shown after shutter press)
+             BRUSH SELECTION VIEW (shown after shutter press)
              ══════════════════════════════════════════════ -->
-        <div id="crop-select-view" class="absolute inset-0 z-[30] hidden flex-col bg-black" style="animation: fadeIn 0.2s ease;">
+        <div id="crop-select-view" class="absolute inset-0 z-[30] hidden flex-col bg-black" style="animation: fadeIn 0.18s ease;">
 
           <!-- Header -->
-          <div class="flex-shrink-0 flex items-center justify-between px-4 bg-black/95 border-b border-white/10"
-               style="padding-top: max(env(safe-area-inset-top, 0px), 48px); padding-bottom: 14px;">
+          <div class="flex-shrink-0 flex items-center justify-between px-3 bg-black/95 border-b border-white/10"
+               style="padding-top: max(env(safe-area-inset-top, 0px), 44px); padding-bottom: 12px;">
             <button id="crop-cancel-btn"
-                    class="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-white/8 border border-white/10 text-white/70 text-sm active:scale-95 transition-transform">
-              <span class="material-symbols-outlined text-base">close</span>
+                    class="flex items-center gap-1 px-3 py-2 rounded-xl bg-white/6 border border-white/10 text-white/65 text-sm active:scale-90 transition-transform">
+              <span class="material-symbols-outlined text-[18px]">close</span>
               İptal
             </button>
             <div class="text-center">
-              <span class="text-white font-bold text-base block">Alan Seç</span>
-              <span class="text-white/35 text-[11px]">Taranacak bölgeyi işaretle</span>
+              <span class="text-white font-bold text-base block leading-tight">Alan Boyama</span>
+              <span class="text-white/35 text-[10px]">Taranacak metni parmağınla işaretle</span>
             </div>
             <button id="crop-confirm-btn"
-                    class="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-primary border border-primary/50 text-white text-sm font-bold opacity-40 pointer-events-none active:scale-95 transition-transform">
-              <span class="material-symbols-outlined text-base">crop_free</span>
+                    class="flex items-center gap-1 px-3 py-2 rounded-xl bg-primary border border-primary/50 text-white text-sm font-bold opacity-40 pointer-events-none active:scale-90 transition-transform">
+              <span class="material-symbols-outlined text-[18px]">document_scanner</span>
               Tara
             </button>
           </div>
 
-          <!-- Interactive crop canvas (fills remaining height) -->
+          <!-- Brush canvas fills all remaining space -->
           <div class="flex-1 relative overflow-hidden bg-black">
-            <canvas id="crop-canvas" class="w-full h-full" style="display:block; touch-action:none; cursor:crosshair;"></canvas>
+            <canvas id="brush-canvas" style="display:block; width:100%; height:100%;"></canvas>
           </div>
 
-          <!-- Footer -->
-          <div class="flex-shrink-0 px-4 py-4 bg-black/95 border-t border-white/8 flex flex-col items-center gap-1">
-            <div class="flex items-center gap-2">
-              <span class="material-symbols-outlined text-primary text-base">touch_app</span>
-              <p id="crop-hint" class="text-white/60 text-sm">Sürükleyerek alan seçin</p>
+          <!-- Footer: hint + undo / clear -->
+          <div class="flex-shrink-0 px-4 py-3 bg-black/95 border-t border-white/8">
+            <div class="flex items-center justify-between mb-1.5">
+              <button id="brush-undo-btn"
+                      class="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-white/60 text-xs active:scale-90 transition-transform">
+                <span class="material-symbols-outlined text-[16px]">undo</span>
+                Geri Al
+              </button>
+              <div class="flex items-center gap-2">
+                <div class="w-3 h-3 rounded-full bg-violet-400" style="opacity:0.75"></div>
+                <p id="brush-hint" class="text-white/55 text-xs">Parmağınızla metni üzerinde gezdirin</p>
+              </div>
+              <button id="brush-clear-btn"
+                      class="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-white/60 text-xs active:scale-90 transition-transform">
+                <span class="material-symbols-outlined text-[16px]">ink_eraser</span>
+                Temizle
+              </button>
             </div>
-            <p class="text-white/28 text-xs">Küçük bölge seçmek OCR'yi hızlandırır ve doğruluğu artırır</p>
+            <p class="text-center text-white/22 text-[10px]">Küçük alan seçmek OCR'yi hızlandırır ve doğruluğu artırır</p>
           </div>
         </div>
 
@@ -810,8 +828,8 @@ const UIModule = (() => {
         return;
       }
 
-      // 3. After flash settle, open crop view
-      setTimeout(() => _showCropView(captured), 230);
+      // 3. After flash settle, open brush-select view
+      setTimeout(() => _showBrushView(captured), 230);
     });
 
     // ── Gallery / file import ────────────────────────────────
@@ -828,7 +846,7 @@ const UIModule = (() => {
         c.width = bitmap.width;
         c.height = bitmap.height;
         c.getContext('2d').drawImage(bitmap, 0, 0);
-        _showCropView(c);
+        _showBrushView(c);
       } catch {
         showToast('Görsel yüklenemedi.', 'error');
       }
