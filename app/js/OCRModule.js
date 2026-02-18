@@ -439,7 +439,14 @@ const OCRModule = (() => {
           const nCand = (typeof DictionaryModule !== 'undefined' && typeof DictionaryModule.normalize === 'function')
             ? DictionaryModule.normalize(candidate.stem || candidate.word || '')
             : String(candidate.word || '').toLowerCase();
-          if (nRaw && nCand && (nRaw === nCand || nRaw.startsWith(nCand) || nCand.startsWith(nRaw))) {
+          const minCandLen = 3;
+          const rawLongEnough = nRaw && nRaw.length >= 4;
+          const candLongEnough = nCand && nCand.length >= minCandLen;
+          const strongPrefix = rawLongEnough && candLongEnough && (
+            (nRaw.startsWith(nCand) && nCand.length >= Math.floor(nRaw.length * 0.6)) ||
+            (nCand.startsWith(nRaw) && nRaw.length >= Math.floor(nCand.length * 0.6))
+          );
+          if (nRaw && nCand && (nRaw === nCand || strongPrefix)) {
             addEntries([candidate]);
             return true;
           }
