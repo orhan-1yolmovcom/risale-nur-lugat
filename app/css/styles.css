@@ -335,6 +335,19 @@ input[type=range]::-webkit-slider-thumb {
   text-shadow: 0 1px 6px rgba(0,0,0,0.8);
 }
 
+/* ---------- Quick Suggest Panel ---------- */
+#quick-suggest-panel {
+  will-change: transform;
+}
+.qs-word-main:active {
+  background: rgba(255, 255, 255, 0.08) !important;
+}
+.qs-word-chip:active,
+.qs-token-chip:active {
+  background: rgba(199, 0, 36, 0.15);
+  border-color: rgba(199, 0, 36, 0.4);
+}
+
 /* ---------- Settings glass panel ---------- */
 .settings-glass {
   background: linear-gradient(145deg, rgba(40, 40, 40, 0.4) 0%, rgba(20, 20, 20, 0.4) 100%);

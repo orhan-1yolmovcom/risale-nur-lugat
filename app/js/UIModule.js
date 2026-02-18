@@ -428,6 +428,97 @@ const UIModule = (() => {
     };
   }
 
+  // ============================================================
+  //  QUICK SUGGEST — instant dictionary results after brush OCR
+  // ============================================================
+  function _showQuickSuggest(result) {
+    const panel   = document.getElementById('quick-suggest-panel');
+    const content = document.getElementById('quick-suggest-content');
+    if (!panel || !content) return;
+
+    const wordsFound = (result.wordsFound || []).slice(0, 5);
+    const tokens     = (result.tokens || []).slice(0, 5);
+
+    if (wordsFound.length === 0 && tokens.length === 0) {
+      OCRModule.stopCamera();
+      window.navigateTo('analysis');
+      return;
+    }
+
+    let html = '';
+
+    if (wordsFound.length > 0) {
+      const first = wordsFound[0];
+      html += `
+        <button class="qs-word-main w-full text-left glass-card rounded-2xl p-4 mb-3 flex items-center gap-3 group active:scale-[0.98] transition-transform" data-word="${first.word}">
+          <div class="flex-shrink-0 w-12 h-12 rounded-xl bg-primary/15 border border-primary/25 flex items-center justify-center">
+            <span class="material-symbols-outlined text-primary text-2xl">book_2</span>
+          </div>
+          <div class="flex-1 min-w-0">
+            <span class="text-white font-bold text-lg block">${first.word}</span>
+            <span class="text-white/50 text-sm leading-snug mt-0.5 block line-clamp-2">${(first.meaning || '').substring(0, 120)}</span>
+          </div>
+          <span class="material-symbols-outlined text-white/25 text-xl flex-shrink-0">chevron_right</span>
+        </button>`;
+
+      if (wordsFound.length > 1) {
+        html += `<div class="flex flex-wrap gap-2 mb-1">`;
+        for (let i = 1; i < wordsFound.length; i++) {
+          html += `<button class="qs-word-chip px-3 py-2 rounded-xl bg-white/6 border border-white/10 text-white/75 text-sm font-medium active:scale-95 transition-transform" data-word="${wordsFound[i].word}">${wordsFound[i].word}</button>`;
+        }
+        html += `</div>`;
+      }
+    } else {
+      html += `
+        <div class="text-center py-3">
+          <span class="material-symbols-outlined text-white/20 text-3xl block mb-2">search_off</span>
+          <p class="text-white/40 text-sm mb-3">Lügatte doğrudan eşleşme bulunamadı</p>
+        </div>
+        <div class="flex flex-wrap gap-2 justify-center mb-2">
+          ${tokens.map(t => `<button class="qs-token-chip px-3 py-2 rounded-xl bg-white/6 border border-white/10 text-white/70 text-sm" data-token="${t}">${t}</button>`).join('')}
+        </div>`;
+    }
+
+    content.innerHTML = html;
+
+    // Slide panel up
+    panel.style.transform = 'translateY(0)';
+
+    // Bind word clicks → open modal
+    content.querySelectorAll('.qs-word-main, .qs-word-chip').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const word = btn.getAttribute('data-word');
+        const r = DictionaryModule.lookup(word);
+        if (r.found) showWordModal(r.entry, r.entries);
+      });
+    });
+
+    content.querySelectorAll('.qs-token-chip').forEach(btn => {
+      btn.addEventListener('click', () => {
+        lookupAndShowWord(btn.getAttribute('data-token'));
+      });
+    });
+
+    // "Tüm Sonuçlar" → full analysis page
+    const allBtn = document.getElementById('quick-suggest-all-btn');
+    if (allBtn) allBtn.onclick = () => {
+      _hideQuickSuggest();
+      OCRModule.stopCamera();
+      window.navigateTo('analysis');
+    };
+
+    // "Kapat" → dismiss, camera continues
+    const closeBtn = document.getElementById('quick-suggest-close-btn');
+    if (closeBtn) closeBtn.onclick = () => {
+      _hideQuickSuggest();
+    };
+  }
+
+  function _hideQuickSuggest() {
+    const panel = document.getElementById('quick-suggest-panel');
+    if (panel) panel.style.transform = 'translateY(100%)';
+  }
+
   /**
    * Opens the brush-selection overlay with srcCanvas as the frozen background.
    *
@@ -532,6 +623,7 @@ const UIModule = (() => {
       let drawing    = false;
       let lx = 0, ly = 0;
       let rafPending = false;
+      let lineY      = null;  // locks brush to a single horizontal text line
 
       // ── RAF-throttled render ─────────────────────────────────
       function render() {
@@ -539,6 +631,23 @@ const UIModule = (() => {
         ctx.fillStyle = '#000';
         ctx.fillRect(0, 0, dispW, dispH);
         ctx.drawImage(srcCanvas, iX, iY, iW, iH);
+        // Single-line constraint visual guide
+        if (lineY !== null) {
+          const band = Math.max(brushR * 2.5, 30);
+          ctx.save();
+          ctx.fillStyle = 'rgba(139, 92, 246, 0.06)';
+          ctx.fillRect(0, lineY - band, dispW, band * 2);
+          ctx.strokeStyle = 'rgba(139, 92, 246, 0.18)';
+          ctx.setLineDash([6, 6]);
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          ctx.moveTo(0, lineY - band);
+          ctx.lineTo(dispW, lineY - band);
+          ctx.moveTo(0, lineY + band);
+          ctx.lineTo(dispW, lineY + band);
+          ctx.stroke();
+          ctx.restore();
+        }
         ctx.drawImage(maskC, 0, 0, dispW, dispH);
         ctx.save();
         ctx.globalAlpha = STROKE_ALPHA;
@@ -583,6 +692,14 @@ const UIModule = (() => {
         lx = e.clientX - r.left;
         ly = e.clientY - r.top;
 
+        // Lock Y to the first stroke's line for single-line precision
+        if (lineY === null) {
+          lineY = ly;
+        } else {
+          const band = Math.max(brushR * 2.5, 30);
+          ly = Math.max(lineY - band, Math.min(lineY + band, ly));
+        }
+
         undoStack.push(maskCtx.getImageData(0, 0, physW, physH));
         if (undoStack.length > 30) undoStack.shift();
 
@@ -603,7 +720,12 @@ const UIModule = (() => {
         const pts = e.getCoalescedEvents ? e.getCoalescedEvents() : [e];
         for (const pt of pts) {
           const cx = pt.clientX - r.left;
-          const cy = pt.clientY - r.top;
+          let   cy = pt.clientY - r.top;
+          // Clamp Y to the horizontal line band for single-line precision
+          if (lineY !== null) {
+            const band = Math.max(brushR * 2.5, 30);
+            cy = Math.max(lineY - band, Math.min(lineY + band, cy));
+          }
           brushSegment(strkCtx, lx, ly, cx, cy);
           lx = cx; ly = cy;
         }
@@ -621,7 +743,7 @@ const UIModule = (() => {
         strkCtx.clearRect(0, 0, physW, physH);
         scheduleRender();
         confirmBtn.classList.remove('opacity-40', 'pointer-events-none');
-        hintEl.textContent = '✓ Alan işaretlendi — devam edebilir veya tarayabilirsiniz';
+        hintEl.textContent = '✓ Satır seçildi — yatay devam edin veya Tara\'ya dokunun';
       }
       fc.addEventListener('pointerup',     endStroke);
       fc.addEventListener('pointercancel', endStroke);
@@ -632,6 +754,7 @@ const UIModule = (() => {
         maskCtx.putImageData(undoStack.pop(), 0, 0);
         scheduleRender();
         if (!undoStack.length) {
+          lineY = null;
           confirmBtn.classList.add('opacity-40', 'pointer-events-none');
           hintEl.textContent = 'Parmağınızla metni üzerinde gezdirin';
         }
@@ -640,6 +763,7 @@ const UIModule = (() => {
       // ── Clear ────────────────────────────────────────────────
       clearBtn.onclick = () => {
         undoStack = [];
+        lineY = null;
         maskCtx.clearRect(0, 0, physW, physH);
         strkCtx.clearRect(0, 0, physW, physH);
         scheduleRender();
@@ -676,20 +800,28 @@ const UIModule = (() => {
 
         const cropped = OCRModule.cropForOCR(srcCanvas, cropX, cropY, cropW, cropH);
         const result  = await OCRModule.performOCR(cropped);
-        OCRModule.stopCamera();
+
+        // Limit to max 5 tokens for single-line precision
+        if (result.tokens.length > 5) {
+          result.tokens = result.tokens.slice(0, 5);
+          result.text = result.tokens.join(' ');
+        }
+        if (result.wordsFound && result.wordsFound.length > 5) {
+          result.wordsFound = result.wordsFound.slice(0, 5);
+        }
+
+        // Restore status indicator
+        if (st) st.textContent = 'LIVE';
+        if (sd) { sd.classList.remove('bg-yellow-400'); sd.classList.add('bg-primary'); }
 
         if (result.tokens.length > 0) {
           addScanHistory({ text: result.text, tokenCount: result.tokens.length });
           window._lastOCRResult = result;
-          window.navigateTo('analysis');
+
+          // Show instant quick-suggest panel instead of navigating away
+          _showQuickSuggest(result);
         } else {
           showToast('Seçili alanda metin bulunamadı. Tekrar deneyin.', 'search_off');
-          const vid = document.getElementById('camera-video');
-          if (vid) {
-            OCRModule.startCamera(vid);
-            if (st) st.textContent = 'LIVE';
-            if (sd) { sd.classList.remove('bg-yellow-400'); sd.classList.add('bg-primary'); }
-          }
         }
       };
 
@@ -878,6 +1010,37 @@ const UIModule = (() => {
           </div>
         </div>
 
+        <!-- ══════════════════════════════════════════════
+             QUICK SUGGEST PANEL (instant results after OCR)
+             ══════════════════════════════════════════════ -->
+        <div id="quick-suggest-panel"
+             class="absolute inset-x-0 bottom-0 z-[35] transition-transform duration-300 ease-out"
+             style="transform: translateY(100%);">
+          <div class="bg-gradient-to-t from-[#0d0d0d] via-[#131313]/98 to-[#1a1a1a]/90 backdrop-blur-2xl border-t border-white/10 rounded-t-3xl shadow-[0_-8px_40px_rgba(0,0,0,0.7)]"
+               style="padding: 14px 20px max(env(safe-area-inset-bottom, 0px), 28px) 20px;">
+            <div class="flex justify-center mb-3">
+              <div class="w-10 h-1 rounded-full bg-white/20"></div>
+            </div>
+            <div class="flex items-center gap-2 mb-4">
+              <span class="material-symbols-outlined text-primary text-lg">auto_awesome</span>
+              <span class="text-white/60 text-sm font-semibold tracking-wide">Bunu mu demek istediniz?</span>
+            </div>
+            <div id="quick-suggest-content" class="max-h-[40vh] overflow-y-auto"></div>
+            <div class="flex gap-3 mt-4">
+              <button id="quick-suggest-all-btn"
+                      class="flex-1 py-3 rounded-2xl bg-primary/90 text-white font-bold text-sm flex items-center justify-center gap-2 active:scale-95 transition-transform">
+                <span class="material-symbols-outlined text-[18px]">list_alt</span>
+                Tüm Sonuçlar
+              </button>
+              <button id="quick-suggest-close-btn"
+                      class="py-3 px-5 rounded-2xl bg-white/8 border border-white/10 text-white/60 font-medium text-sm flex items-center justify-center gap-2 active:scale-95 transition-transform">
+                <span class="material-symbols-outlined text-[18px]">close</span>
+                Kapat
+              </button>
+            </div>
+          </div>
+        </div>
+
       </div>
     `;
     bindScanEvents();
@@ -950,6 +1113,7 @@ const UIModule = (() => {
 
     // ── Navigation ───────────────────────────────────────────
     document.getElementById('scan-back-btn')?.addEventListener('click', () => {
+      _hideQuickSuggest();
       OCRModule.stopCamera();
       window.navigateTo('home');
     });
@@ -965,6 +1129,7 @@ const UIModule = (() => {
 
     // ── Shutter button ───────────────────────────────────────
     document.getElementById('scan-capture-btn')?.addEventListener('click', () => {
+      _hideQuickSuggest(); // dismiss any previous suggestion
       const flash = document.getElementById('capture-flash');
 
       // 1. White flash animation
