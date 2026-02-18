@@ -160,67 +160,209 @@ const OCRModule = (() => {
     ctx.putImageData(imgData, 0, 0);
   }
 
-  // ── Real OCR: canvas ──────────────────────────────────────
-  async function performOCR(canvas) {
+  // ── GPT-4o-mini Vision OCR ──────────────────────────────────
+  /**
+   * Sends the canvas to GPT-4o-mini with an ultra-minimal OCR prompt.
+   * Returns { text, tokens, lines } in the same shape as performOCR.
+   *
+   * Cost optimisation:
+   *   • Image resized to ≤ 1024 px longest side before encoding
+   *   • JPEG q=0.88 (smaller payload than PNG)
+   *   • temperature=0  — no creative variation
+   *   • max_tokens=1500 — enough for a full page, not wasteful
+   *   • No preprocessing (greyscale) — GPT handles colour natively
+   */
+  async function performOCRWithGPT(canvas) {
     _showOverlay();
-    _setProgress(2, 'Hazırlanıyor...', 'Görüntü işleniyor');
+    _setProgress(5, 'GPT-4o-mini bağlanıyor...', 'OpenAI API hazırlanıyor');
 
     try {
-      if (!canvas) throw new Error('Çerçeve yakalanamadı');
-      const blob = await new Promise(res => canvas.toBlob(res, 'image/png'));
+      const apiKey = (window.APP_CONFIG && window.APP_CONFIG.OPENAI_API_KEY) || '';
+      if (!apiKey || apiKey === 'YOUR_OPENAI_API_KEY_HERE') {
+        throw new Error('OpenAI API key ayarlanmamış (config.js)');
+      }
 
-      const w = await _getWorker();
-      _setProgress(30, 'Metin tanınıyor...', 'OCR çalışıyor');
+      // ── Resize to ≤ 1024 px (reduces tokens & cost) ─────────
+      const MAX = 1024;
+      let sw = canvas.width, sh = canvas.height;
+      if (sw > MAX || sh > MAX) {
+        const s = MAX / Math.max(sw, sh);
+        sw = Math.round(sw * s);
+        sh = Math.round(sh * s);
+      }
+      const resized = document.createElement('canvas');
+      resized.width = sw; resized.height = sh;
+      resized.getContext('2d').drawImage(canvas, 0, 0, sw, sh);
+      const base64 = resized.toDataURL('image/jpeg', 0.88).split(',')[1];
 
-      const { data } = await w.recognize(blob);
-      const text = (data.text || '').trim();
+      _setProgress(20, 'Görsel gönderiliyor...', `${sw}×${sh} px · JPEG`);
 
-      _setProgress(100, 'Tamamlandı!', `${text.split(/\s+/).length} kelime bulundu`);
+      // ── API request ──────────────────────────────────────────
+      const res = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type':  'application/json',
+          'Authorization': `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify({
+          model:       'gpt-4o-mini',
+          temperature: 0,
+          max_tokens:  1500,
+          messages: [
+            {
+              role: 'system',
+              content:
+                'Sen minimal çıktılar üreten, düşük token kullanarak çalışan bir OCR ve metin ayrıştırma asistanısın.\n' +
+                'Görevin sadece şunlardır:\n' +
+                '1. Görüntüdeki tüm metni oku.\n' +
+                '2. Türkçe/Osmanlıca kelimeleri ayıkla.\n' +
+                '3. Kelimeleri satır satır ve kelime kelime JSON formatında döndür.\n' +
+                '4. Ek yorum, açıklama, analiz veya tahmin yapma.\n' +
+                '5. Çıkış tamamen sade olmalı, sadece işlenebilir veri üretmelisin.',
+            },
+            {
+              role: 'user',
+              content: [
+                {
+                  type: 'text',
+                  text:
+                    'Aşağıdaki görseldeki metni oku ve SADECE şu JSON formatında cevap ver — başka hiçbir şey yazma:\n\n' +
+                    '{"full_text":"...tam metin...","lines":[["kelime1","kelime2"],["kelime1","kelime2"]]}\n\n' +
+                    '- Kelimeleri normalize etme.\n' +
+                    '- Harf düzeltme yapma.\n' +
+                    '- Osmanlıca-Türkçe ayırma.\n' +
+                    '- Sadece gördüğünü aynen çıkar.',
+                },
+                {
+                  type: 'image_url',
+                  image_url: { url: `data:image/jpeg;base64,${base64}`, detail: 'auto' },
+                },
+              ],
+            },
+          ],
+        }),
+      });
+
+      if (!res.ok) {
+        const errBody = await res.json().catch(() => ({}));
+        throw new Error(`OpenAI ${res.status}: ${errBody?.error?.message || 'bilinmeyen hata'}`);
+      }
+
+      _setProgress(80, 'Yanıt işleniyor...', 'JSON ayrıştırılıyor');
+
+      const data  = await res.json();
+      const raw   = (data.choices?.[0]?.message?.content || '').trim();
+
+      // Strip optional markdown code fences
+      const jsonStr = raw.replace(/^```[a-z]*\n?/i, '').replace(/```$/,'').trim();
+      const jsonMatch = jsonStr.match(/\{[\s\S]*\}/);
+      if (!jsonMatch) throw new Error('Geçerli JSON yanıtı alınamadı');
+
+      const parsed = JSON.parse(jsonMatch[0]);
+      const text   = (parsed.full_text || '').trim();
+      const lines  = Array.isArray(parsed.lines) ? parsed.lines : [];
+      const tokens = lines.flat().map(t => String(t).trim()).filter(t => t.length > 0);
+
+      // Usage info (nice for debugging)
+      const usage = data.usage || {};
+      console.info(
+        `[GPT-OCR] prompt=${usage.prompt_tokens}t · completion=${usage.completion_tokens}t · total=${usage.total_tokens}t`
+      );
+
+      _setProgress(100, 'Tamamlandı!', `${tokens.length} kelime · ${usage.total_tokens || '?'} token`);
       await _sleep(400);
       _hideOverlay();
 
-      const tokens = tokenize(text);
-      return { text: text || 'Metin tespit edilemedi.', tokens };
+      return { text: text || 'Metin tespit edilemedi.', tokens, lines };
+
     } catch (err) {
-      console.error('[OCRModule] OCR error:', err);
+      console.error('[OCRModule] GPT OCR error:', err);
       _hideOverlay();
-      return { text: 'OCR işlemi sırasında hata oluştu.', tokens: [] };
+      throw err; // re-throw so callers can fall back to Tesseract
     }
   }
 
-  // ── Real OCR: image file ──────────────────────────────────
-  async function performOCRFromImage(file) {
+  // ── Real OCR: canvas (GPT-first, Tesseract fallback) ──────
+  async function performOCR(canvas) {
+    // Try GPT-4o-mini first if API key is configured
+    const apiKey = (window.APP_CONFIG && window.APP_CONFIG.OPENAI_API_KEY) || '';
+    if (apiKey && apiKey !== 'YOUR_OPENAI_API_KEY_HERE') {
+      try {
+        return await performOCRWithGPT(canvas);
+      } catch (err) {
+        console.warn('[OCRModule] GPT failed, falling back to Tesseract:', err.message);
+        // fall through to Tesseract
+      }
+    }
+
+    // ── Tesseract fallback ────────────────────────────────────
     _showOverlay();
-    _setProgress(2, 'Görsel yükleniyor...', file.name || 'dosya');
-
+    _setProgress(2, 'Hazırlanıyor...', 'Tesseract motoru kullanılıyor');
     try {
-      // Optionally preprocess the image via an off-screen canvas
-      const imageBitmap = await createImageBitmap(file);
-      const canvas = document.createElement('canvas');
-      canvas.width  = imageBitmap.width;
-      canvas.height = imageBitmap.height;
-      const ctx = canvas.getContext('2d');
-      ctx.drawImage(imageBitmap, 0, 0);
-      _preprocessCanvas(ctx, canvas.width, canvas.height);
-
+      if (!canvas) throw new Error('Çerçeve yakalanamadı');
       const blob = await new Promise(res => canvas.toBlob(res, 'image/png'));
-
-      const w = await _getWorker();
-      _setProgress(30, 'Metin tanınıyor...', 'OCR çalışıyor');
-
+      const w    = await _getWorker();
+      _setProgress(30, 'Metin tanınıyor...', 'Tesseract çalışıyor');
       const { data } = await w.recognize(blob);
       const text = (data.text || '').trim();
-
       _setProgress(100, 'Tamamlandı!', `${text.split(/\s+/).length} kelime bulundu`);
       await _sleep(400);
       _hideOverlay();
-
       const tokens = tokenize(text);
-      return { text: text || 'Metin tespit edilemedi.', tokens };
+      return { text: text || 'Metin tespit edilemedi.', tokens, lines: [] };
     } catch (err) {
-      console.error('[OCRModule] Image OCR error:', err);
+      console.error('[OCRModule] Tesseract OCR error:', err);
       _hideOverlay();
-      return { text: 'Görsel OCR işlemi sırasında hata oluştu.', tokens: [] };
+      return { text: 'OCR işlemi sırasında hata oluştu.', tokens: [], lines: [] };
+    }
+  }
+
+  // ── Real OCR: image file (GPT-first, Tesseract fallback) ─
+  async function performOCRFromImage(file) {
+    // Build canvas from the file first (needed for both GPT and Tesseract paths)
+    let canvas;
+    try {
+      const imageBitmap = await createImageBitmap(file);
+      canvas = document.createElement('canvas');
+      canvas.width  = imageBitmap.width;
+      canvas.height = imageBitmap.height;
+      canvas.getContext('2d').drawImage(imageBitmap, 0, 0);
+    } catch (err) {
+      console.error('[OCRModule] Image load error:', err);
+      return { text: 'Görsel yüklenirken hata oluştu.', tokens: [], lines: [] };
+    }
+
+    // Try GPT-4o-mini first if key is configured
+    const apiKey = (window.APP_CONFIG && window.APP_CONFIG.OPENAI_API_KEY) || '';
+    if (apiKey && apiKey !== 'YOUR_OPENAI_API_KEY_HERE') {
+      try {
+        return await performOCRWithGPT(canvas);
+      } catch (err) {
+        console.warn('[OCRModule] GPT failed for image file, falling back to Tesseract:', err.message);
+      }
+    }
+
+    // ── Tesseract fallback ────────────────────────────────────
+    _showOverlay();
+    _setProgress(2, 'Görsel yükleniyor...', file.name || 'dosya');
+    try {
+      // Preprocess for Tesseract
+      const ctx = canvas.getContext('2d');
+      _preprocessCanvas(ctx, canvas.width, canvas.height);
+      const blob = await new Promise(res => canvas.toBlob(res, 'image/png'));
+      const w    = await _getWorker();
+      _setProgress(30, 'Metin tanınıyor...', 'Tesseract çalışıyor');
+      const { data } = await w.recognize(blob);
+      const text = (data.text || '').trim();
+      _setProgress(100, 'Tamamlandı!', `${text.split(/\s+/).length} kelime bulundu`);
+      await _sleep(400);
+      _hideOverlay();
+      const tokens = tokenize(text);
+      return { text: text || 'Metin tespit edilemedi.', tokens, lines: [] };
+    } catch (err) {
+      console.error('[OCRModule] Tesseract image OCR error:', err);
+      _hideOverlay();
+      return { text: 'Görsel OCR işlemi sırasında hata oluştu.', tokens: [], lines: [] };
     }
   }
 
@@ -265,7 +407,7 @@ const OCRModule = (() => {
   return {
     startCamera, stopCamera,
     captureFullFrame, captureFrame, cropForOCR,
-    performOCR, performOCRFromImage,
+    performOCR, performOCRWithGPT, performOCRFromImage,
     tokenize, toggleFlash, getVideoTrack, terminateWorker,
   };
 })();
