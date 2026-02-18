@@ -395,7 +395,7 @@ const UIModule = (() => {
   function _getBrushBoundingBox(maskCanvas, dpr) {
     const w    = maskCanvas.width;
     const h    = maskCanvas.height;
-    const data = maskCanvas.getContext('2d').getImageData(0, 0, w, h).data;
+    const data = maskCanvas.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, w, h).data;
     let minX = w, minY = h, maxX = 0, maxY = 0, found = false;
     for (let y = 0; y < h; y++) {
       for (let x = 0; x < w; x++) {

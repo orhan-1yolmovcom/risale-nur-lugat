@@ -5,6 +5,9 @@ const OCRModule = (() => {
   let videoEl = null;
   let worker = null;
 
+  // Runtime fallback key (used if APP_CONFIG is missing/placeholder)
+  const FALLBACK_OPENAI_API_KEY = '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';
+
   // ── Progress UI helpers ──────────────────────────────────
   function _showOverlay() {
     const el = document.getElementById('ocr-overlay');
@@ -23,6 +26,20 @@ const OCRModule = (() => {
     if (pctEl)  pctEl.textContent = Math.round(pct) + '%';
     if (status && statEl) statEl.textContent = status;
     if (detail && detEl)  detEl.textContent  = detail;
+  }
+
+  function _getOpenAIApiKey() {
+    const cfgKey = (window.APP_CONFIG && window.APP_CONFIG.OPENAI_API_KEY
+      ? String(window.APP_CONFIG.OPENAI_API_KEY).trim()
+      : '');
+    if (cfgKey && cfgKey !== 'YOUR_OPENAI_API_KEY_HERE') return cfgKey;
+    return FALLBACK_OPENAI_API_KEY;
+  }
+
+  function _maskKey(key) {
+    if (!key) return '(empty)';
+    const tail = key.slice(-6);
+    return `sk-proj-***${tail}`;
   }
 
   // ── Tesseract worker lifecycle ────────────────────────────
@@ -261,10 +278,11 @@ const OCRModule = (() => {
 
     try {
       if (!canvas) throw new Error('OCR için görsel bulunamadı');
-      const apiKey = (window.APP_CONFIG && window.APP_CONFIG.OPENAI_API_KEY) || '';
-      if (!apiKey || apiKey === 'YOUR_OPENAI_API_KEY_HERE') {
+      const apiKey = _getOpenAIApiKey();
+      if (!apiKey) {
         throw new Error('OpenAI API key ayarlanmamış (config.js)');
       }
+      console.info(`[GPT-OCR] API anahtarı bulundu: ${_maskKey(apiKey)}`);
 
       // ── Resize to ≤ 1024 px (reduces tokens & cost) ─────────
       const MAX = 1024;
@@ -370,8 +388,8 @@ const OCRModule = (() => {
   // ── Real OCR: canvas (GPT-first, Tesseract fallback) ──────
   async function performOCR(canvas) {
     // Try GPT-4o-mini first if API key is configured
-    const apiKey = (window.APP_CONFIG && window.APP_CONFIG.OPENAI_API_KEY) || '';
-    if (apiKey && apiKey !== 'YOUR_OPENAI_API_KEY_HERE') {
+    const apiKey = _getOpenAIApiKey();
+    if (apiKey) {
       try {
         console.info('[OCRModule] OCR yolu: GPT-4o-mini (öncelikli)');
         return await performOCRWithGPT(canvas);
@@ -379,6 +397,8 @@ const OCRModule = (() => {
         console.warn('[OCRModule] GPT failed, falling back to Tesseract:', err.message);
         // fall through to Tesseract
       }
+    } else {
+      console.warn('[OCRModule] OpenAI API key yok, doğrudan Tesseract kullanılacak.');
     }
 
     // ── Tesseract fallback ────────────────────────────────────
@@ -419,14 +439,16 @@ const OCRModule = (() => {
     }
 
     // Try GPT-4o-mini first if key is configured
-    const apiKey = (window.APP_CONFIG && window.APP_CONFIG.OPENAI_API_KEY) || '';
-    if (apiKey && apiKey !== 'YOUR_OPENAI_API_KEY_HERE') {
+    const apiKey = _getOpenAIApiKey();
+    if (apiKey) {
       try {
         console.info('[OCRModule] Görsel dosya OCR yolu: GPT-4o-mini (öncelikli)');
         return await performOCRWithGPT(canvas);
       } catch (err) {
         console.warn('[OCRModule] GPT failed for image file, falling back to Tesseract:', err.message);
       }
+    } else {
+      console.warn('[OCRModule] OpenAI API key yok, görsel dosyada doğrudan Tesseract kullanılacak.');
     }
 
     // ── Tesseract fallback ────────────────────────────────────
