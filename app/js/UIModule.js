@@ -436,13 +436,13 @@ const UIModule = (() => {
   const QS_STOP = new Set([
     'a','b','c','d','e','f','g','h','i','j','k','l','m','n','o','p','r','s','t','u','v','y','z',
     've','da','de','bu','şu','o','ki','bir','ile','ise','ne','için','mi','mu','mü','mı',
-    'ol','var','yok','ben','sen','biz','siz','hem','dahi',
+    'ol','var','yok','ben','sen','biz','siz','hem','dahi','ya',
   ]);
 
   function _isNoise(word) {
     if (!word) return true;
     const w = word.toLowerCase().replace(/[^a-zçğıöşü]/g, '');
-    return w.length <= 1 || QS_STOP.has(w);
+    return w.length <= 2 || QS_STOP.has(w);
   }
 
   /**
@@ -450,41 +450,44 @@ const UIModule = (() => {
    * Priority: meaningful wordsFound > smartLookup on tokens > remaining wordsFound
    */
   function _buildSuggestList(result) {
-    const allFound  = (result.wordsFound || []);
-    const tokens    = (result.tokens || []);
-    const list      = [];           // {word, meaning, root, source:'found'|'smart'|'token'}
-    const seenKeys  = new Set();
+    const allFound = (result.wordsFound || []);
+    const tokens   = (result.tokens || []);
+    const bag      = new Map(); // key -> {word, meaning, root, score}
 
-    const addEntry = (e, src) => {
-      const k = (e.word || '').toUpperCase();
-      if (!k || seenKeys.has(k)) return;
-      seenKeys.add(k);
-      list.push({ word: e.word, meaning: e.meaning || '', root: e.stem || e.root || '', source: src });
+    const addScored = (e, score) => {
+      const key = String(e.word || '').toUpperCase();
+      if (!key) return;
+      const next = {
+        word: e.word,
+        meaning: e.meaning || '',
+        root: e.stem || e.root || '',
+        score,
+      };
+      const prev = bag.get(key);
+      if (!prev || next.score > prev.score) bag.set(key, next);
     };
 
-    // Phase 1: meaningful (non-noise) wordsFound first
-    for (const w of allFound) {
-      if (!_isNoise(w.word)) addEntry(w, 'found');
-    }
-
-    // Phase 2: for each token, try smartLookup to find stems/OCR-corrected matches
-    for (const t of tokens) {
-      if (!t || t.length < 2) continue;
-      if (_isNoise(t)) continue;
+    // 1) Token-based smart lookup is highest priority (earlier token = higher score)
+    tokens.forEach((t, idx) => {
+      if (!t || t.length < 2 || _isNoise(t)) return;
       try {
         const r = DictionaryModule.smartLookup(t);
         if (r && r.found) {
-          for (const e of (r.entries || [r.entry])) addEntry(e, 'smart');
+          const entries = r.entries || [r.entry];
+          for (const e of entries) addScored(e, 120 - idx * 6);
         }
       } catch (_) {}
-    }
+    });
 
-    // Phase 3: add remaining (noise) wordsFound at the tail
-    for (const w of allFound) {
-      if (_isNoise(w.word)) addEntry(w, 'found');
-    }
+    // 2) OCR wordsFound as fallback (meaningful first)
+    allFound.forEach((w, idx) => {
+      addScored(w, _isNoise(w.word) ? 20 - idx : 70 - idx);
+    });
 
-    return list.slice(0, 6);
+    return Array.from(bag.values())
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 6)
+      .map(({ score, ...rest }) => rest);
   }
 
   function _showQuickSuggest(result) {
