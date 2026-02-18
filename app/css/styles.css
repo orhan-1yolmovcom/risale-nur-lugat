@@ -51,13 +51,26 @@ body {
 .input-glass {
   background: rgba(0, 0, 0, 0.25);
   border: 1px solid rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.95);
+  caret-color: #ffffff;
   transition: all 0.3s ease;
+}
+.input-glass::placeholder {
+  color: rgba(255, 255, 255, 0.45);
 }
 .input-glass:focus {
   background: rgba(0, 0, 0, 0.35);
   border-color: #c70024;
   box-shadow: 0 0 0 2px rgba(199, 0, 36, 0.3);
   outline: none;
+}
+/* Prevent mobile/browser autofill from forcing white background + unreadable text */
+.input-glass:-webkit-autofill,
+.input-glass:-webkit-autofill:hover,
+.input-glass:-webkit-autofill:focus {
+  -webkit-text-fill-color: rgba(255, 255, 255, 0.95);
+  -webkit-box-shadow: 0 0 0 1000px rgba(0, 0, 0, 0.35) inset;
+  transition: background-color 9999s ease-in-out 0s;
 }
 
 /* ---------- Liquid Button ---------- */
@@ -289,6 +302,37 @@ input[type=range]::-webkit-slider-thumb {
   height: 4px;
   border-radius: 2px;
   background: rgba(139, 92, 246, 0.28);
+}
+
+/* ---------- Brush size ghost preview ---------- */
+.brush-size-ghost {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%) scale(0.92);
+  opacity: 0;
+  pointer-events: none;
+  z-index: 40;
+  transition: opacity 0.18s ease, transform 0.18s ease;
+}
+.brush-size-ghost.show {
+  opacity: 1;
+  transform: translate(-50%, -50%) scale(1);
+}
+.brush-size-ghost-circle {
+  border-radius: 9999px;
+  border: 2px solid rgba(139, 92, 246, 0.92);
+  background: rgba(139, 92, 246, 0.18);
+  box-shadow: 0 0 0 2px rgba(255,255,255,0.18) inset, 0 0 26px rgba(139,92,246,0.45);
+}
+.brush-size-ghost-label {
+  margin-top: 8px;
+  text-align: center;
+  color: rgba(210, 180, 255, 0.95);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  text-shadow: 0 1px 6px rgba(0,0,0,0.8);
 }
 
 /* ---------- Settings glass panel ---------- */

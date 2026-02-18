@@ -445,6 +445,9 @@ const UIModule = (() => {
   function _showBrushView(srcCanvas) {
     const view       = document.getElementById('crop-select-view');
     const canvasEl   = document.getElementById('brush-canvas');
+    const ghostEl    = document.getElementById('brush-size-ghost');
+    const ghostCircle= document.getElementById('brush-size-ghost-circle');
+    const ghostLabel = document.getElementById('brush-size-ghost-label');
     const confirmBtn = document.getElementById('crop-confirm-btn');
     const cancelBtn  = document.getElementById('crop-cancel-btn');
     const undoBtn    = document.getElementById('brush-undo-btn');
@@ -501,13 +504,28 @@ const UIModule = (() => {
       // Wire slider
       const sizeSlider = document.getElementById('brush-size-slider');
       const sizeLabel  = document.getElementById('brush-size-label');
+      let ghostTimer;
+
+      function showBrushGhost() {
+        if (!ghostEl || !ghostCircle || !ghostLabel) return;
+        const d = Math.max(16, Math.round(brushR * 2));
+        ghostCircle.style.width  = `${d}px`;
+        ghostCircle.style.height = `${d}px`;
+        ghostLabel.textContent = `${Math.round(brushR)} px`;
+        ghostEl.classList.add('show');
+        clearTimeout(ghostTimer);
+        ghostTimer = setTimeout(() => ghostEl.classList.remove('show'), 700);
+      }
+
       if (sizeSlider) {
         sizeSlider.value = Math.round(brushR);
         if (sizeLabel) sizeLabel.textContent = Math.round(brushR);
         sizeSlider.oninput = () => {
           brushR = parseInt(sizeSlider.value, 10);
           if (sizeLabel) sizeLabel.textContent = brushR;
+          showBrushGhost();
         };
+        showBrushGhost();
       }
 
       let undoStack  = [];
@@ -558,6 +576,7 @@ const UIModule = (() => {
         if (!e.isPrimary) return;     // ignore secondary touches (pinch)
         e.preventDefault();
         fc.setPointerCapture(e.pointerId);
+        if (ghostEl) ghostEl.classList.remove('show');
         drawing = true;
 
         const r = fc.getBoundingClientRect();
@@ -632,6 +651,7 @@ const UIModule = (() => {
       cancelBtn.onclick = () => {
         view.classList.add('hidden');
         view.classList.remove('flex');
+        clearTimeout(ghostTimer);
       };
 
       // ── Confirm → OCR ────────────────────────────────────────
@@ -817,6 +837,10 @@ const UIModule = (() => {
           <!-- Brush canvas fills all remaining space -->
           <div class="flex-1 relative overflow-hidden bg-black">
             <canvas id="brush-canvas" style="display:block; width:100%; height:100%;"></canvas>
+            <div id="brush-size-ghost" class="brush-size-ghost">
+              <div id="brush-size-ghost-circle" class="brush-size-ghost-circle" style="width:44px;height:44px;"></div>
+              <div id="brush-size-ghost-label" class="brush-size-ghost-label">22 px</div>
+            </div>
           </div>
 
           <!-- Footer: hint + brush-size slider + undo/clear -->
