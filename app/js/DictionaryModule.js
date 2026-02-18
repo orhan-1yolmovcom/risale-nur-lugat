@@ -12,8 +12,15 @@ const DictionaryModule = (() => {
       const nw = normalize(entry.word || '');
       const ns = normalize(entry.stem || '');
 
-      if (nw && !exactIndex.has(nw)) exactIndex.set(nw, entry);
-      if (ns && !exactIndex.has(ns)) exactIndex.set(ns, entry);
+      // Store arrays so words with multiple meanings are all kept
+      if (nw) {
+        if (!exactIndex.has(nw)) exactIndex.set(nw, [entry]);
+        else exactIndex.get(nw).push(entry);
+      }
+      if (ns && ns !== nw) {
+        if (!exactIndex.has(ns)) exactIndex.set(ns, [entry]);
+        else exactIndex.get(ns).push(entry);
+      }
 
       return { entry, nw, ns };
     });
@@ -34,50 +41,6 @@ const DictionaryModule = (() => {
       }
     }
     return null;
-  }
-
-  function _splitSqlTuples(valuesChunk) {
-    const tuples = [];
-    let inQuote = false;
-    let depth = 0;
-    let cur = '';
-
-    for (let i = 0; i < valuesChunk.length; i++) {
-      const ch = valuesChunk[i];
-
-      if (ch === "'") {
-        if (inQuote && valuesChunk[i + 1] === "'") {
-          // escaped quote in SQL string
-          if (depth > 0) cur += "''";
-          i++;
-          continue;
-        }
-        inQuote = !inQuote;
-        if (depth > 0) cur += ch;
-        continue;
-      }
-
-      if (!inQuote) {
-        if (ch === '(') {
-          depth++;
-          if (depth === 1) {
-            cur = '';
-            continue;
-          }
-        } else if (ch === ')') {
-          depth--;
-          if (depth === 0) {
-            tuples.push(cur);
-            cur = '';
-            continue;
-          }
-        }
-      }
-
-      if (depth > 0) cur += ch;
-    }
-
-    return tuples;
   }
 
   function _splitTupleFields(tupleText) {
@@ -127,36 +90,92 @@ const DictionaryModule = (() => {
     return Number.isFinite(n) ? n : t;
   }
 
+  /**
+   * Parse the entire SQL dump by streaming through the text character-by-character.
+   * This handles:
+   *   • 133+ separate INSERT blocks in phpMyAdmin dumps
+   *   • Semicolons inside quoted strings (no premature truncation)
+   *   • Escaped quotes '' inside values
+   *   • Multi-line anlam fields with newlines
+   */
   function _parseDbLugatSql(sqlText) {
     const entries = [];
-    const insertRegex = /INSERT\s+INTO\s+`db_lugat`[\s\S]*?VALUES\s*([\s\S]*?);/gi;
-    let match;
+    const len = sqlText.length;
 
-    while ((match = insertRegex.exec(sqlText))) {
-      const valuesChunk = match[1] || '';
-      const tuples = _splitSqlTuples(valuesChunk);
+    // We walk through the entire text looking for tuple boundaries: ( ... )
+    // We only parse tuples that appear after a VALUES keyword.
+    let inValues = false;  // are we inside a VALUES section?
+    let inQuote  = false;  // inside a SQL single-quoted string?
+    let depth    = 0;      // parenthesis nesting depth
+    let cur      = '';     // current tuple content accumulator
 
-      for (const tuple of tuples) {
-        const cols = _splitTupleFields(tuple);
-        if (cols.length < 5) continue;
+    for (let i = 0; i < len; i++) {
+      const ch = sqlText[i];
 
-        const id      = _decodeSqlValue(cols[0]);
-        const indeks  = _decodeSqlValue(cols[1]);
-        const kelime  = _decodeSqlValue(cols[2]);
-        const kirp    = _decodeSqlValue(cols[3]);
-        const anlam   = _decodeSqlValue(cols[4]);
-
-        if (!kelime || !anlam) continue;
-
-        entries.push({
-          id,
-          index: String(indeks || ''),
-          word: String(kelime),
-          stem: String(kirp || ''),
-          meaning: String(anlam),
-          source: 'db_lugat.sql',
-        });
+      // ── Handle single-quote toggling ──────────────────
+      if (ch === "'") {
+        // Escaped quote '' inside a string
+        if (inQuote && i + 1 < len && sqlText[i + 1] === "'") {
+          if (depth > 0) cur += "''";
+          i++;
+          continue;
+        }
+        inQuote = !inQuote;
+        if (depth > 0) cur += ch;
+        continue;
       }
+
+      // ── Outside a quoted string ───────────────────────
+      if (!inQuote) {
+        // Detect VALUES keyword (case-insensitive)
+        if ((ch === 'V' || ch === 'v') && sqlText.substring(i, i + 6).toUpperCase() === 'VALUES') {
+          inValues = true;
+          i += 5; // skip past 'ALUES'
+          continue;
+        }
+
+        // Detect INSERT keyword → means previous VALUES block ended, new one starts
+        if ((ch === 'I' || ch === 'i') && sqlText.substring(i, i + 6).toUpperCase() === 'INSERT') {
+          inValues = false;
+          depth = 0;
+          cur = '';
+          i += 5; // skip past 'NSERT'
+          continue;
+        }
+
+        if (inValues) {
+          if (ch === '(') {
+            depth++;
+            if (depth === 1) { cur = ''; continue; }
+          } else if (ch === ')') {
+            depth--;
+            if (depth === 0) {
+              // ── Parse the accumulated tuple ─────────
+              const cols = _splitTupleFields(cur);
+              if (cols.length >= 5) {
+                const kelime = _decodeSqlValue(cols[2]);
+                const kirp   = _decodeSqlValue(cols[3]);
+                const anlam  = _decodeSqlValue(cols[4]);
+                if (kelime && anlam) {
+                  entries.push({
+                    id:      _decodeSqlValue(cols[0]),
+                    index:   String(_decodeSqlValue(cols[1]) || ''),
+                    word:    String(kelime),
+                    stem:    String(kirp || ''),
+                    meaning: String(anlam),
+                    source:  'db_lugat.sql',
+                  });
+                }
+              }
+              cur = '';
+              continue;
+            }
+          }
+        }
+      }
+
+      // Accumulate characters inside a tuple
+      if (depth > 0) cur += ch;
     }
 
     return entries;
@@ -216,15 +235,17 @@ const DictionaryModule = (() => {
 
   /**
    * Look up a word in the dictionary
-   * Returns { found: true, entry: {...} } or { found: false, suggestions: [...] }
+   * Returns { found: true, entries: [...] } or { found: false, suggestions: [...] }
    */
   function lookup(rawWord) {
     const normalized = normalize(rawWord);
     if (!normalized) return { found: false, suggestions: [] };
 
-    // Exact match
-    const exact = exactIndex.get(normalized);
-    if (exact) return { found: true, entry: exact };
+    // Exact match — returns all entries for this word
+    const exactArr = exactIndex.get(normalized);
+    if (exactArr && exactArr.length > 0) {
+      return { found: true, entry: exactArr[0], entries: exactArr };
+    }
 
     // Partial / fuzzy match (optimized for large datasets)
     const first = normalized[0] || '';

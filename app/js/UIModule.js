@@ -47,18 +47,21 @@ const UIModule = (() => {
   // ============================================================
   //  WORD MODAL
   // ============================================================
-  function showWordModal(entry) {
+  function showWordModal(entry, allEntries) {
     const overlay = document.getElementById('word-modal-overlay');
     const modal = document.getElementById('word-modal');
     const content = document.getElementById('word-modal-content');
     if (!overlay || !modal || !content) return;
 
     const isFav = FavoriteModule.isFavorite(entry.word);
+    const root = entry.root || entry.stem || '';
+    const entries = allEntries && allEntries.length > 1 ? allEntries : null;
+
     content.innerHTML = `
       <div class="flex items-start justify-between mb-4">
         <div>
           <h2 class="text-2xl font-bold text-white">${entry.word}</h2>
-          ${entry.root ? `<span class="text-xs text-white/40 mt-1 block">Kök: ${entry.root}</span>` : ''}
+          ${root ? `<span class="text-xs text-white/40 mt-1 block">Kök: ${root}</span>` : ''}
         </div>
         <div class="flex items-center gap-2">
           <button id="modal-tts-btn" class="w-10 h-10 rounded-full bg-white/5 border border-white/10 flex items-center justify-center hover:bg-white/10 transition-colors" title="Seslendir">
@@ -69,9 +72,16 @@ const UIModule = (() => {
           </button>
         </div>
       </div>
-      <div class="glass-card rounded-2xl p-4 mb-4">
-        <p class="text-white/90 text-base leading-relaxed">${entry.meaning}</p>
-      </div>
+      ${entries ? entries.map((e, idx) => `
+        <div class="glass-card rounded-2xl p-4 mb-3">
+          ${entries.length > 1 ? `<span class="text-[10px] text-white/30 uppercase tracking-widest font-semibold mb-1 block">Anlam ${idx + 1}</span>` : ''}
+          <p class="text-white/90 text-base leading-relaxed">${e.meaning}</p>
+        </div>
+      `).join('') : `
+        <div class="glass-card rounded-2xl p-4 mb-4">
+          <p class="text-white/90 text-base leading-relaxed">${entry.meaning}</p>
+        </div>
+      `}
       ${entry.examples && entry.examples.length > 0 ? `
         <div class="mb-4">
           <h3 class="text-xs text-white/40 uppercase tracking-widest mb-2 ml-1">Örnekler</h3>
@@ -1050,7 +1060,7 @@ const UIModule = (() => {
   function lookupAndShowWord(word) {
     const result = DictionaryModule.lookup(word);
     if (result.found) {
-      showWordModal(result.entry);
+      showWordModal(result.entry, result.entries);
     } else {
       // Show "not found" with suggestions
       const overlay = document.getElementById('word-modal-overlay');
@@ -1092,7 +1102,7 @@ const UIModule = (() => {
           hideWordModal();
           setTimeout(() => {
             const entry = DictionaryModule.lookup(s.getAttribute('data-word'));
-            if (entry.found) showWordModal(entry.entry);
+            if (entry.found) showWordModal(entry.entry, entry.entries);
           }, 350);
         });
       });
@@ -1174,7 +1184,7 @@ const UIModule = (() => {
       item.addEventListener('click', () => {
         const word = item.getAttribute('data-word');
         const result = DictionaryModule.lookup(word);
-        if (result.found) showWordModal(result.entry);
+        if (result.found) showWordModal(result.entry, result.entries);
       });
     });
   }
@@ -1232,7 +1242,7 @@ const UIModule = (() => {
       btn.addEventListener('click', () => {
         const word = btn.getAttribute('data-word');
         const result = DictionaryModule.lookup(word);
-        if (result.found) showWordModal(result.entry);
+        if (result.found) showWordModal(result.entry, result.entries);
       });
     });
 
