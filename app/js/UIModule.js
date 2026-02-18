@@ -420,7 +420,13 @@ const UIModule = (() => {
 
   /**
    * Opens the brush-selection overlay with srcCanvas as the frozen background.
-   * User paints over the area they want to OCR.
+   *
+   * Architecture:
+   *   strkC  — per-stroke scratch canvas; drawn SOLID (alpha=1); cleared after each stroke
+   *   maskC  — persistent canvas; each finished stroke is composited in at STROKE_ALPHA
+   *   render — photo → maskC (committed) → strkC (live preview at STROKE_ALPHA)
+   *
+   * This prevents within-stroke alpha accumulation while still building up across strokes.
    */
   function _showBrushView(srcCanvas) {
     const view       = document.getElementById('crop-select-view');
@@ -431,7 +437,6 @@ const UIModule = (() => {
     const clearBtn   = document.getElementById('brush-clear-btn');
     const hintEl     = document.getElementById('brush-hint');
 
-    // Reset state
     hintEl.textContent = 'Parmağınızla metni üzerinde gezdirin';
     confirmBtn.classList.add('opacity-40', 'pointer-events-none');
     view.classList.remove('hidden');
@@ -442,103 +447,126 @@ const UIModule = (() => {
       const rect  = canvasEl.getBoundingClientRect();
       const dispW = rect.width;
       const dispH = rect.height;
-
-      // ── Physical-resolution canvas ──────────────────────────
       const physW = Math.round(dispW * dpr);
       const physH = Math.round(dispH * dpr);
 
-      // Clone canvas to wipe out any previous event listeners
-      const fc  = canvasEl.cloneNode(false);
+      // ── Clone canvas to reset all event listeners ────────────
+      const fc = canvasEl.cloneNode(false);
       canvasEl.parentNode.replaceChild(fc, canvasEl);
       fc.width  = physW;
       fc.height = physH;
-      fc.style.width  = dispW + 'px';
-      fc.style.height = dispH + 'px';
-      fc.style.touchAction  = 'none';
-      fc.style.cursor       = 'crosshair';
-      fc.style.userSelect   = 'none';
+      fc.style.width       = dispW + 'px';
+      fc.style.height      = dispH + 'px';
+      fc.style.touchAction = 'none';
+      fc.style.userSelect  = 'none';
+      fc.style.cursor      = 'crosshair';
 
       const ctx = fc.getContext('2d');
       ctx.scale(dpr, dpr);
 
-      // ── Letterbox the source image ──────────────────────────
+      // ── Letterbox source image ───────────────────────────────
       const imgAspect  = srcCanvas.width / srcCanvas.height;
       const dispAspect = dispW / dispH;
       let iW, iH, iX, iY;
-      if (imgAspect > dispAspect) { iW = dispW;  iH = dispW / imgAspect; }
-      else                        { iH = dispH;  iW = dispH * imgAspect; }
+      if (imgAspect > dispAspect) { iW = dispW; iH = dispW / imgAspect; }
+      else                        { iH = dispH; iW = dispH * imgAspect; }
       iX = (dispW - iW) / 2;
       iY = (dispH - iH) / 2;
 
-      // ── Offscreen mask canvas (accumulates all brush strokes) ─
+      // ── Persistent mask (stores committed strokes) ───────────
       const maskC   = document.createElement('canvas');
       maskC.width   = physW;
       maskC.height  = physH;
       const maskCtx = maskC.getContext('2d');
       maskCtx.scale(dpr, dpr);
 
-      const BRUSH_R   = Math.max(10, Math.min(16, dispW * 0.026)); // ~10px on 390px screen
-      const BRUSH_CLR = 'rgba(139, 92, 246, 0.18)';                // violet-500 @18% — stays semi-transparent
+      // ── Per-stroke scratch (solid, merged on stroke-end) ─────
+      const strkC   = document.createElement('canvas');
+      strkC.width   = physW;
+      strkC.height  = physH;
+      const strkCtx = strkC.getContext('2d');
+      strkCtx.scale(dpr, dpr);
 
-      // ── Stroke history stack (for undo) ─────────────────────
-      // Each entry = ImageData snapshot taken BEFORE the stroke begins
-      let strokes = [];
-      let drawing = false, lx = 0, ly = 0;
+      // Brush radius 20-24px in CSS pixels; full alpha on strkC
+      const BRUSH_R     = Math.max(20, Math.min(24, dispW * 0.055));
+      const BRUSH_COLOR = 'rgba(139, 92, 246, 1)'; // solid on scratch canvas
+      const STROKE_ALPHA = 0.52;                    // alpha when committing to maskC
 
-      // ── Composite: photo base + mask overlay ─────────────────
+      let undoStack = [];
+      let drawing   = false;
+      let lx = 0, ly = 0;
+
+      // ── Render: photo → committed mask → live stroke ─────────
       function render() {
         ctx.clearRect(0, 0, dispW, dispH);
         ctx.fillStyle = '#000';
         ctx.fillRect(0, 0, dispW, dispH);
         ctx.drawImage(srcCanvas, iX, iY, iW, iH);
-        // Draw mask overlay on top
+
+        // Committed strokes at full alpha (already baked in at STROKE_ALPHA)
         ctx.drawImage(maskC, 0, 0, dispW, dispH);
+
+        // Live stroke: show at STROKE_ALPHA so preview matches final look
+        ctx.save();
+        ctx.globalAlpha = STROKE_ALPHA;
+        ctx.drawImage(strkC, 0, 0, dispW, dispH);
+        ctx.restore();
       }
 
-      render(); // initial: just the frozen photo
+      // ── Brush segment: dense interpolated capsule ────────────
+      // Samples every BRUSH_R * 0.4 px — ensures no gaps even at max swipe speed
+      function brushSegment(pctx, ax, ay, bx, by) {
+        const dist  = Math.hypot(bx - ax, by - ay);
+        const steps = Math.max(1, Math.ceil(dist / (BRUSH_R * 0.4)));
 
-      // ── Pointer events (mouse + touch unified) ────────────────
+        pctx.strokeStyle = BRUSH_COLOR;
+        pctx.fillStyle   = BRUSH_COLOR;
+        pctx.lineWidth   = BRUSH_R * 2;
+        pctx.lineCap     = 'round';
+        pctx.lineJoin    = 'round';
+        pctx.beginPath();
+        pctx.moveTo(ax, ay);
+        for (let i = 1; i <= steps; i++) {
+          const t = i / steps;
+          pctx.lineTo(ax + (bx - ax) * t, ay + (by - ay) * t);
+        }
+        pctx.stroke();
+      }
+
+      render(); // initial: frozen photo only
+
+      // ── Pointer events ───────────────────────────────────────
       fc.addEventListener('pointerdown', e => {
         e.preventDefault();
-        fc.setPointerCapture(e.pointerId); // track even outside canvas
+        fc.setPointerCapture(e.pointerId);
         drawing = true;
+
         const r = fc.getBoundingClientRect();
         lx = e.clientX - r.left;
         ly = e.clientY - r.top;
 
-        // Save snapshot before this new stroke (for undo)
-        strokes.push(maskCtx.getImageData(0, 0, physW, physH));
-        if (strokes.length > 30) strokes.shift();
+        // Save maskC snapshot for undo BEFORE this stroke
+        undoStack.push(maskCtx.getImageData(0, 0, physW, physH));
+        if (undoStack.length > 30) undoStack.shift();
 
-        // Initial dot at touch point
-        maskCtx.fillStyle = BRUSH_CLR;
-        maskCtx.beginPath();
-        maskCtx.arc(lx, ly, BRUSH_R, 0, Math.PI * 2);
-        maskCtx.fill();
+        // Clear scratch and draw initial dot
+        strkCtx.clearRect(0, 0, physW, physH);
+        strkCtx.fillStyle = BRUSH_COLOR;
+        strkCtx.beginPath();
+        strkCtx.arc(lx, ly, BRUSH_R, 0, Math.PI * 2);
+        strkCtx.fill();
         render();
       });
 
       fc.addEventListener('pointermove', e => {
         if (!drawing) return;
         e.preventDefault();
-        const r = fc.getBoundingClientRect();
+        const r  = fc.getBoundingClientRect();
         const cx = e.clientX - r.left;
         const cy = e.clientY - r.top;
 
-        // Single stroke with round linecap — naturally creates a smooth capsule.
-        // Do NOT add a separate fill arc here: double-painting the same pixels
-        // with source-over rapidly accumulates opacity and makes the brush opaque.
-        maskCtx.globalCompositeOperation = 'source-over';
-        maskCtx.strokeStyle = BRUSH_CLR;
-        maskCtx.lineWidth   = BRUSH_R * 2;
-        maskCtx.lineCap     = 'round';
-        maskCtx.lineJoin    = 'round';
-
-        maskCtx.beginPath();
-        maskCtx.moveTo(lx, ly);
-        maskCtx.lineTo(cx, cy);
-        maskCtx.stroke();
-
+        // Dense interpolated segment → no gaps on fast swipes
+        brushSegment(strkCtx, lx, ly, cx, cy);
         render();
         lx = cx; ly = cy;
       });
@@ -546,36 +574,51 @@ const UIModule = (() => {
       function endStroke() {
         if (!drawing) return;
         drawing = false;
+
+        // Commit scratch canvas → mask at STROKE_ALPHA
+        maskCtx.save();
+        maskCtx.globalAlpha = STROKE_ALPHA;
+        maskCtx.drawImage(strkC, 0, 0, dispW, dispH);
+        maskCtx.restore();
+
+        // Clear scratch
+        strkCtx.clearRect(0, 0, physW, physH);
+        render();
+
         confirmBtn.classList.remove('opacity-40', 'pointer-events-none');
         hintEl.textContent = '✓ Alan işaretlendi — devam edebilir veya tarayabilirsiniz';
       }
       fc.addEventListener('pointerup',     endStroke);
       fc.addEventListener('pointercancel', endStroke);
 
-      // ── Button handlers (onclick avoids stacking on re-open) ──
+      // ── Undo ─────────────────────────────────────────────────
       undoBtn.onclick = () => {
-        if (!strokes.length) return;
-        maskCtx.putImageData(strokes.pop(), 0, 0);
+        if (!undoStack.length) return;
+        maskCtx.putImageData(undoStack.pop(), 0, 0);
         render();
-        if (!strokes.length) {
+        if (!undoStack.length) {
           confirmBtn.classList.add('opacity-40', 'pointer-events-none');
           hintEl.textContent = 'Parmağınızla metni üzerinde gezdirin';
         }
       };
 
+      // ── Clear ────────────────────────────────────────────────
       clearBtn.onclick = () => {
-        strokes = [];
+        undoStack = [];
         maskCtx.clearRect(0, 0, physW, physH);
+        strkCtx.clearRect(0, 0, physW, physH);
         render();
         confirmBtn.classList.add('opacity-40', 'pointer-events-none');
         hintEl.textContent = 'Parmağınızla metni üzerinde gezdirin';
       };
 
+      // ── Cancel ───────────────────────────────────────────────
       cancelBtn.onclick = () => {
         view.classList.add('hidden');
         view.classList.remove('flex');
       };
 
+      // ── Confirm → OCR ────────────────────────────────────────
       confirmBtn.onclick = async () => {
         const bb = _getBrushBoundingBox(maskC, dpr);
         if (!bb) { showToast('Lütfen önce bir alan boyayın.', 'brush'); return; }
@@ -589,12 +632,12 @@ const UIModule = (() => {
         if (sd) { sd.classList.remove('bg-primary'); sd.classList.add('bg-yellow-400'); }
 
         // Map CSS display-coords → source image pixel-coords
-        const scaleX  = srcCanvas.width  / iW;
-        const scaleY  = srcCanvas.height / iH;
-        const cropX   = Math.round((bb.x - iX) * scaleX);
-        const cropY   = Math.round((bb.y - iY) * scaleY);
-        const cropW   = Math.round(bb.w * scaleX);
-        const cropH   = Math.round(bb.h * scaleY);
+        const scaleX = srcCanvas.width  / iW;
+        const scaleY = srcCanvas.height / iH;
+        const cropX  = Math.round((bb.x - iX) * scaleX);
+        const cropY  = Math.round((bb.y - iY) * scaleY);
+        const cropW  = Math.round(bb.w * scaleX);
+        const cropH  = Math.round(bb.h * scaleY);
 
         const cropped = OCRModule.cropForOCR(srcCanvas, cropX, cropY, cropW, cropH);
         const result  = await OCRModule.performOCR(cropped);
@@ -614,6 +657,7 @@ const UIModule = (() => {
           }
         }
       };
+
     }); // end requestAnimationFrame
   }
 
