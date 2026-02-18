@@ -160,6 +160,88 @@ const OCRModule = (() => {
     ctx.putImageData(imgData, 0, 0);
   }
 
+  // ── GPT OCR response helpers ─────────────────────────────
+  function _stripCodeFences(s) {
+    if (!s) return '';
+    return s
+      .replace(/^```[a-z]*\n?/i, '')
+      .replace(/```$/i, '')
+      .trim();
+  }
+
+  function _tryParseJson(s) {
+    try { return JSON.parse(s); } catch { return null; }
+  }
+
+  function _extractJsonObjectString(s) {
+    if (!s) return '';
+    const m = s.match(/\{[\s\S]*\}/);
+    return m ? m[0] : '';
+  }
+
+  function _normalizeJsonString(s) {
+    // Minimal repair for common model formatting noise
+    return (s || '')
+      .replace(/[“”]/g, '"')
+      .replace(/[‘’]/g, "'")
+      .replace(/,\s*([}\]])/g, '$1')
+      .trim();
+  }
+
+  function _sanitizeLines(lines) {
+    if (!Array.isArray(lines)) return [];
+    return lines
+      .map(line => Array.isArray(line) ? line : [])
+      .map(line => line.map(w => String(w).trim()).filter(Boolean))
+      .filter(line => line.length > 0);
+  }
+
+  function _linesFromFullText(text) {
+    if (!text) return [];
+    return text
+      .split(/\r?\n+/)
+      .map(line => line.split(/\s+/).map(w => w.trim()).filter(Boolean))
+      .filter(line => line.length > 0);
+  }
+
+  function _parseModelOCRResponse(raw) {
+    const stripped = _stripCodeFences((raw || '').trim());
+
+    // 1) direct parse
+    let parsed = _tryParseJson(stripped);
+
+    // 2) extract {...} block parse
+    if (!parsed) {
+      const objStr = _extractJsonObjectString(stripped);
+      parsed = _tryParseJson(objStr);
+    }
+
+    // 3) normalized parse (smart quotes / trailing commas)
+    if (!parsed) {
+      const repaired = _normalizeJsonString(_extractJsonObjectString(stripped) || stripped);
+      parsed = _tryParseJson(repaired);
+    }
+
+    // 4) fallback: treat response as plain text
+    if (!parsed || typeof parsed !== 'object') {
+      const plain = stripped;
+      const lines = _linesFromFullText(plain);
+      return {
+        full_text: plain,
+        lines,
+      };
+    }
+
+    const fullText = String(parsed.full_text || '').trim();
+    let lines = _sanitizeLines(parsed.lines);
+    if (!lines.length && fullText) lines = _linesFromFullText(fullText);
+
+    return {
+      full_text: fullText,
+      lines,
+    };
+  }
+
   // ── GPT-4o-mini Vision OCR ──────────────────────────────────
   /**
    * Sends the canvas to GPT-4o-mini with an ultra-minimal OCR prompt.
@@ -175,8 +257,10 @@ const OCRModule = (() => {
   async function performOCRWithGPT(canvas) {
     _showOverlay();
     _setProgress(5, 'GPT-4o-mini bağlanıyor...', 'OpenAI API hazırlanıyor');
+    console.info('[GPT-OCR] Başladı: görsel OCR akışı başlatılıyor');
 
     try {
+      if (!canvas) throw new Error('OCR için görsel bulunamadı');
       const apiKey = (window.APP_CONFIG && window.APP_CONFIG.OPENAI_API_KEY) || '';
       if (!apiKey || apiKey === 'YOUR_OPENAI_API_KEY_HERE') {
         throw new Error('OpenAI API key ayarlanmamış (config.js)');
@@ -194,8 +278,11 @@ const OCRModule = (() => {
       resized.width = sw; resized.height = sh;
       resized.getContext('2d').drawImage(canvas, 0, 0, sw, sh);
       const base64 = resized.toDataURL('image/jpeg', 0.88).split(',')[1];
+      console.info(`[GPT-OCR] Görsel hazırlandı: ${canvas.width}x${canvas.height} → ${sw}x${sh}`);
 
       _setProgress(20, 'Görsel gönderiliyor...', `${sw}×${sh} px · JPEG`);
+      console.info('[GPT-OCR] Görsel gönderildi: OpenAI API çağrısı yapılıyor');
+      _setProgress(45, 'Görsel inceleniyor...', 'Model yanıtı bekleniyor');
 
       // ── API request ──────────────────────────────────────────
       const res = await fetch('https://api.openai.com/v1/chat/completions', {
@@ -242,32 +329,30 @@ const OCRModule = (() => {
           ],
         }),
       });
+      console.info(`[GPT-OCR] API döndü: HTTP ${res.status}`);
 
       if (!res.ok) {
         const errBody = await res.json().catch(() => ({}));
         throw new Error(`OpenAI ${res.status}: ${errBody?.error?.message || 'bilinmeyen hata'}`);
       }
 
-      _setProgress(80, 'Yanıt işleniyor...', 'JSON ayrıştırılıyor');
-
       const data  = await res.json();
       const raw   = (data.choices?.[0]?.message?.content || '').trim();
+      console.info('[GPT-OCR] API yanıt içeriği alındı, JSON ayrıştırılıyor');
 
-      // Strip optional markdown code fences
-      const jsonStr = raw.replace(/^```[a-z]*\n?/i, '').replace(/```$/,'').trim();
-      const jsonMatch = jsonStr.match(/\{[\s\S]*\}/);
-      if (!jsonMatch) throw new Error('Geçerli JSON yanıtı alınamadı');
+      _setProgress(85, 'Yanıt işleniyor...', 'JSON ayrıştırılıyor');
 
-      const parsed = JSON.parse(jsonMatch[0]);
-      const text   = (parsed.full_text || '').trim();
-      const lines  = Array.isArray(parsed.lines) ? parsed.lines : [];
-      const tokens = lines.flat().map(t => String(t).trim()).filter(t => t.length > 0);
+      const parsed = _parseModelOCRResponse(raw);
+      const text   = parsed.full_text;
+      const lines  = parsed.lines;
+      const tokens = lines.flat();
 
       // Usage info (nice for debugging)
       const usage = data.usage || {};
       console.info(
         `[GPT-OCR] prompt=${usage.prompt_tokens}t · completion=${usage.completion_tokens}t · total=${usage.total_tokens}t`
       );
+      console.info('[GPT-OCR] Metinler böyle (ilk 20 token):', tokens.slice(0, 20));
 
       _setProgress(100, 'Tamamlandı!', `${tokens.length} kelime · ${usage.total_tokens || '?'} token`);
       await _sleep(400);
@@ -288,6 +373,7 @@ const OCRModule = (() => {
     const apiKey = (window.APP_CONFIG && window.APP_CONFIG.OPENAI_API_KEY) || '';
     if (apiKey && apiKey !== 'YOUR_OPENAI_API_KEY_HERE') {
       try {
+        console.info('[OCRModule] OCR yolu: GPT-4o-mini (öncelikli)');
         return await performOCRWithGPT(canvas);
       } catch (err) {
         console.warn('[OCRModule] GPT failed, falling back to Tesseract:', err.message);
@@ -336,6 +422,7 @@ const OCRModule = (() => {
     const apiKey = (window.APP_CONFIG && window.APP_CONFIG.OPENAI_API_KEY) || '';
     if (apiKey && apiKey !== 'YOUR_OPENAI_API_KEY_HERE') {
       try {
+        console.info('[OCRModule] Görsel dosya OCR yolu: GPT-4o-mini (öncelikli)');
         return await performOCRWithGPT(canvas);
       } catch (err) {
         console.warn('[OCRModule] GPT failed for image file, falling back to Tesseract:', err.message);
