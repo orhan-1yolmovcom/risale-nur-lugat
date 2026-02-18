@@ -431,15 +431,71 @@ const UIModule = (() => {
   // ============================================================
   //  QUICK SUGGEST — instant dictionary results after brush OCR
   // ============================================================
+
+  // Stop-words / noise that should never headline the suggest panel
+  const QS_STOP = new Set([
+    'a','b','c','d','e','f','g','h','i','j','k','l','m','n','o','p','r','s','t','u','v','y','z',
+    've','da','de','bu','şu','o','ki','bir','ile','ise','ne','için','mi','mu','mü','mı',
+    'ol','var','yok','ben','sen','biz','siz','hem','dahi',
+  ]);
+
+  function _isNoise(word) {
+    if (!word) return true;
+    const w = word.toLowerCase().replace(/[^a-zçğıöşü]/g, '');
+    return w.length <= 1 || QS_STOP.has(w);
+  }
+
+  /**
+   * Build the best list of suggestions to show.
+   * Priority: meaningful wordsFound > smartLookup on tokens > remaining wordsFound
+   */
+  function _buildSuggestList(result) {
+    const allFound  = (result.wordsFound || []);
+    const tokens    = (result.tokens || []);
+    const list      = [];           // {word, meaning, root, source:'found'|'smart'|'token'}
+    const seenKeys  = new Set();
+
+    const addEntry = (e, src) => {
+      const k = (e.word || '').toUpperCase();
+      if (!k || seenKeys.has(k)) return;
+      seenKeys.add(k);
+      list.push({ word: e.word, meaning: e.meaning || '', root: e.stem || e.root || '', source: src });
+    };
+
+    // Phase 1: meaningful (non-noise) wordsFound first
+    for (const w of allFound) {
+      if (!_isNoise(w.word)) addEntry(w, 'found');
+    }
+
+    // Phase 2: for each token, try smartLookup to find stems/OCR-corrected matches
+    for (const t of tokens) {
+      if (!t || t.length < 2) continue;
+      if (_isNoise(t)) continue;
+      try {
+        const r = DictionaryModule.smartLookup(t);
+        if (r && r.found) {
+          for (const e of (r.entries || [r.entry])) addEntry(e, 'smart');
+        }
+      } catch (_) {}
+    }
+
+    // Phase 3: add remaining (noise) wordsFound at the tail
+    for (const w of allFound) {
+      if (_isNoise(w.word)) addEntry(w, 'found');
+    }
+
+    return list.slice(0, 6);
+  }
+
   function _showQuickSuggest(result) {
     const panel   = document.getElementById('quick-suggest-panel');
     const content = document.getElementById('quick-suggest-content');
     if (!panel || !content) return;
 
-    const wordsFound = (result.wordsFound || []).slice(0, 5);
-    const tokens     = (result.tokens || []).slice(0, 5);
+    const suggestions = _buildSuggestList(result);
+    const tokens      = (result.tokens || []).slice(0, 5);
 
-    if (wordsFound.length === 0 && tokens.length === 0) {
+    if (suggestions.length === 0 && tokens.length === 0) {
       OCRModule.stopCamera();
       window.navigateTo('analysis');
       return;
@@ -447,8 +503,8 @@ const UIModule = (() => {
 
     let html = '';
 
-    if (wordsFound.length > 0) {
-      const first = wordsFound[0];
+    if (suggestions.length > 0) {
+      const first = suggestions[0];
       html += `
         <button class="qs-word-main w-full text-left glass-card rounded-2xl p-4 mb-3 flex items-center gap-3 group active:scale-[0.98] transition-transform" data-word="${first.word}">
           <div class="flex-shrink-0 w-12 h-12 rounded-xl bg-primary/15 border border-primary/25 flex items-center justify-center">
@@ -461,10 +517,10 @@ const UIModule = (() => {
           <span class="material-symbols-outlined text-white/25 text-xl flex-shrink-0">chevron_right</span>
         </button>`;
 
-      if (wordsFound.length > 1) {
+      if (suggestions.length > 1) {
         html += `<div class="flex flex-wrap gap-2 mb-1">`;
-        for (let i = 1; i < wordsFound.length; i++) {
-          html += `<button class="qs-word-chip px-3 py-2 rounded-xl bg-white/6 border border-white/10 text-white/75 text-sm font-medium active:scale-95 transition-transform" data-word="${wordsFound[i].word}">${wordsFound[i].word}</button>`;
+        for (let i = 1; i < suggestions.length; i++) {
+          html += `<button class="qs-word-chip px-3 py-2 rounded-xl bg-white/6 border border-white/10 text-white/75 text-sm font-medium active:scale-95 transition-transform" data-word="${suggestions[i].word}">${suggestions[i].word}</button>`;
         }
         html += `</div>`;
       }
@@ -475,7 +531,7 @@ const UIModule = (() => {
           <p class="text-white/40 text-sm mb-3">Lügatte doğrudan eşleşme bulunamadı</p>
         </div>
         <div class="flex flex-wrap gap-2 justify-center mb-2">
-          ${tokens.map(t => `<button class="qs-token-chip px-3 py-2 rounded-xl bg-white/6 border border-white/10 text-white/70 text-sm" data-token="${t}">${t}</button>`).join('')}
+          ${tokens.filter(t => !_isNoise(t)).map(t => `<button class="qs-token-chip px-3 py-2 rounded-xl bg-white/6 border border-white/10 text-white/70 text-sm" data-token="${t}">${t}</button>`).join('')}
         </div>`;
     }
 
@@ -488,7 +544,9 @@ const UIModule = (() => {
     content.querySelectorAll('.qs-word-main, .qs-word-chip').forEach(btn => {
       btn.addEventListener('click', () => {
         const word = btn.getAttribute('data-word');
-        const r = DictionaryModule.lookup(word);
+        const r = (typeof DictionaryModule.smartLookup === 'function')
+          ? DictionaryModule.smartLookup(word)
+          : DictionaryModule.lookup(word);
         if (r.found) showWordModal(r.entry, r.entries);
       });
     });
@@ -578,13 +636,14 @@ const UIModule = (() => {
       iY = (dispH - iH) / 2;
 
       // ── Canvases ─────────────────────────────────────────────
-      function makeOffscreen() {
+      function makeOffscreen(willReadFrequently = false) {
         const c = document.createElement('canvas');
         c.width = physW; c.height = physH;
-        const cx = c.getContext('2d'); cx.scale(dpr, dpr);
+        const cx = c.getContext('2d', willReadFrequently ? { willReadFrequently: true } : undefined);
+        cx.scale(dpr, dpr);
         return { c, cx };
       }
-      const { c: maskC,  cx: maskCtx  } = makeOffscreen();
+      const { c: maskC,  cx: maskCtx  } = makeOffscreen(true);
       const { c: strkC,  cx: strkCtx  } = makeOffscreen();
 
       // ── Reactive brush radius ────────────────────────────────
@@ -1266,7 +1325,9 @@ const UIModule = (() => {
     document.querySelectorAll('.found-word-item').forEach(btn => {
       btn.addEventListener('click', () => {
         const word = btn.getAttribute('data-word');
-        const result = DictionaryModule.lookup(word);
+        const result = (typeof DictionaryModule.smartLookup === 'function')
+          ? DictionaryModule.smartLookup(word)
+          : DictionaryModule.lookup(word);
         if (result.found) showWordModal(result.entry, result.entries);
       });
     });
@@ -1284,7 +1345,9 @@ const UIModule = (() => {
   }
 
   function lookupAndShowWord(word) {
-    const result = DictionaryModule.lookup(word);
+    const result = (typeof DictionaryModule.smartLookup === 'function')
+      ? DictionaryModule.smartLookup(word)
+      : DictionaryModule.lookup(word);
     if (result.found) {
       showWordModal(result.entry, result.entries);
     } else {
@@ -1327,7 +1390,9 @@ const UIModule = (() => {
         s.addEventListener('click', () => {
           hideWordModal();
           setTimeout(() => {
-            const entry = DictionaryModule.lookup(s.getAttribute('data-word'));
+            const entry = (typeof DictionaryModule.smartLookup === 'function')
+              ? DictionaryModule.smartLookup(s.getAttribute('data-word'))
+              : DictionaryModule.lookup(s.getAttribute('data-word'));
             if (entry.found) showWordModal(entry.entry, entry.entries);
           }, 350);
         });

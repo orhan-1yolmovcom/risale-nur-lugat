@@ -242,6 +242,75 @@ const DictionaryModule = (() => {
       .trim();
   }
 
+  // ── Turkish suffix stripping ──────────────────────────────
+  // Ordered from longest to shortest so we peel the biggest suffix first.
+  const TR_SUFFIXES = [
+    // plural + case combos
+    'larin','lerin','larun','lerun',
+    'lara','lere','lari','leri',
+    'lar','ler',
+    // possessive
+    'nin','nun','nün','nın',
+    // case
+    'dan','den','tan','ten',
+    'da','de','ta','te',
+    'in','un','ün','ın',
+    'na','ne','ya','ye',
+    // accusative / dative
+    'ı','i','u','ü',
+  ];
+
+  /**
+   * Strip Turkish inflectional suffixes from a normalized word.
+   * Returns an array of candidate stems (longest-first strip).
+   */
+  function _turkishStems(normalized) {
+    const stems = [];
+    let cur = normalized;
+    // Try stripping up to 2 suffix layers
+    for (let round = 0; round < 2; round++) {
+      let stripped = false;
+      for (const sfx of TR_SUFFIXES) {
+        if (cur.length > sfx.length + 1 && cur.endsWith(sfx)) {
+          cur = cur.slice(0, -sfx.length);
+          stems.push(cur);
+          stripped = true;
+          break;
+        }
+      }
+      if (!stripped) break;
+    }
+    return stems;
+  }
+
+  // ── OCR confusion map ─────────────────────────────────────
+  // GPT/Tesseract frequently confuse these Turkish-specific characters.
+  const OCR_CONFUSION = [
+    ['s', 'ş'], ['c', 'ç'], ['g', 'ğ'],
+    ['o', 'ö'], ['u', 'ü'], ['i', 'ı'],
+  ];
+
+  /**
+   * Generate OCR-confusion variants of a word.
+   * E.g. "esraf" → ["eşraf", "esraf", …] (swap one char at a time)
+   */
+  function _ocrVariants(normalized) {
+    const variants = [];
+    for (let i = 0; i < normalized.length; i++) {
+      const ch = normalized[i];
+      for (const [a, b] of OCR_CONFUSION) {
+        let replacement = null;
+        if (ch === a) replacement = b;
+        else if (ch === b) replacement = a;
+        if (replacement) {
+          const v = normalized.slice(0, i) + replacement + normalized.slice(i + 1);
+          variants.push(v);
+        }
+      }
+    }
+    return variants;
+  }
+
   /**
    * Look up a word in the dictionary
    * Returns { found: true, entries: [...] } or { found: false, suggestions: [...] }
@@ -301,6 +370,60 @@ const DictionaryModule = (() => {
     }).slice(0, 5);
 
     return { found: false, suggestions };
+  }
+
+  /**
+   * Smart lookup: chains exact → Turkish stems → OCR confusion → stems+OCR.
+   * Returns same shape as lookup().
+   */
+  function smartLookup(rawWord) {
+    // 1) Normal lookup (exact + fuzzy)
+    const direct = lookup(rawWord);
+    if (direct.found) return direct;
+
+    const normalized = normalize(rawWord);
+    if (!normalized || normalized.length < 2) return direct;
+
+    // 2) Turkish suffix-stripped stems
+    const stems = _turkishStems(normalized);
+    for (const stem of stems) {
+      const arr = exactIndex.get(stem);
+      if (arr && arr.length > 0) {
+        return { found: true, entry: arr[0], entries: arr };
+      }
+    }
+
+    // 3) OCR confusion on the full word
+    for (const variant of _ocrVariants(normalized)) {
+      const arr = exactIndex.get(variant);
+      if (arr && arr.length > 0) {
+        return { found: true, entry: arr[0], entries: arr };
+      }
+    }
+
+    // 4) OCR confusion on each stem
+    for (const stem of stems) {
+      for (const variant of _ocrVariants(stem)) {
+        const arr = exactIndex.get(variant);
+        if (arr && arr.length > 0) {
+          return { found: true, entry: arr[0], entries: arr };
+        }
+      }
+    }
+
+    // 5) OCR confusion + stems on first-char-swapped variants
+    //    Handles cases where first char is wrong (e.g. "ş" read as "s")
+    for (const variant of _ocrVariants(normalized)) {
+      const vStems = _turkishStems(variant);
+      for (const vs of vStems) {
+        const arr = exactIndex.get(vs);
+        if (arr && arr.length > 0) {
+          return { found: true, entry: arr[0], entries: arr };
+        }
+      }
+    }
+
+    return direct; // return original with suggestions
   }
 
   /**
@@ -388,5 +511,5 @@ const DictionaryModule = (() => {
     return [...dictionary];
   }
 
-  return { load, lookup, search, normalize, getAll };
+  return { load, lookup, smartLookup, search, normalize, getAll };
 })();

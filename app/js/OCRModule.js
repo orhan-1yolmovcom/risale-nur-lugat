@@ -400,19 +400,30 @@ const OCRModule = (() => {
         }
       };
 
+      const safeSmartLookup = (rawWord) => {
+        try {
+          return (typeof DictionaryModule !== 'undefined' && typeof DictionaryModule.smartLookup === 'function')
+            ? DictionaryModule.smartLookup(rawWord)
+            : safeLookup(rawWord);
+        } catch (_) {
+          return safeLookup(rawWord);
+        }
+      };
+
       const tryMatch = (rawWord) => {
         if (!rawWord || String(rawWord).trim().length < 2) return false;
 
-        const direct = safeLookup(rawWord);
-        if (direct?.found) {
-          addEntries(direct.entries || [direct.entry]);
+        // Use smartLookup: exact → Turkish stems → OCR confusion → combined
+        const smart = safeSmartLookup(rawWord);
+        if (smart?.found) {
+          addEntries(smart.entries || [smart.entry]);
           return true;
         }
 
         // Izafet / OCR suffix fallback: "şahs-ı" -> "şahs"
         const trimmed = String(rawWord).replace(/[-‐‑‒–—]?[ıiuü]$/i, '');
         if (trimmed && trimmed !== rawWord) {
-          const alt = safeLookup(trimmed);
+          const alt = safeSmartLookup(trimmed);
           if (alt?.found) {
             addEntries(alt.entries || [alt.entry]);
             return true;
@@ -420,8 +431,8 @@ const OCRModule = (() => {
         }
 
         // Conservative suggestion fallback
-        if (direct?.suggestions?.length) {
-          const candidate = direct.suggestions[0];
+        if (smart?.suggestions?.length) {
+          const candidate = smart.suggestions[0];
           const nRaw = (typeof DictionaryModule !== 'undefined' && typeof DictionaryModule.normalize === 'function')
             ? DictionaryModule.normalize(rawWord)
             : String(rawWord).toLowerCase();
@@ -454,27 +465,10 @@ const OCRModule = (() => {
         }
       }
 
-      // 2) Single token matching
+      // 2) Single token matching (uses smartLookup for Turkish stems + OCR confusion)
       for (const token of tokens) {
         if (!token || token.length < 2) continue;
-        const lookup = safeLookup(token);
-        if (!lookup || !lookup.found) {
-          tryMatch(token);
-          continue;
-        }
-        const entries = lookup.entries || [lookup.entry];
-        for (const e of entries) {
-          const key = (e.word || '').toUpperCase();
-          if (seenWords.has(key)) continue;
-          seenWords.add(key);
-          wordsFound.push({
-            word:     e.word     || '',
-            meaning:  e.meaning  || '',
-            root:     e.stem     || '',
-            example:  '',
-            synonyms: [],
-          });
-        }
+        tryMatch(token);
       }
       console.info(`[GPT-OCR] Lügat eşleşmesi: ${wordsFound.length} kelime bulundu`);
 
