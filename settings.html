@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html class="dark" lang="tr">
+<head>
+    <meta charset="utf-8"/>
+    <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+    <title>Ayarlar - Risale-i Nur Lûgat</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet"/>
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
+    <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+    <script>
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "primary": "#c70024",
+                        "background-dark": "#230f12",
+                    },
+                    fontFamily: {
+                        "display": ["Inter", "sans-serif"]
+                    },
+                },
+            },
+        }
+    </script>
+    <style>
+        .calligraphy-bg {
+            background-color: #181012;
+            background-image: radial-gradient(circle at 50% 50%, rgba(199, 0, 36, 0.08) 0%, transparent 60%);
+        }
+
+        .glass-card {
+            background: rgba(45, 30, 33, 0.4);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3);
+        }
+
+        .setting-item {
+            padding: 16px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        .setting-item:last-child {
+            border-bottom: none;
+        }
+    </style>
+</head>
+<body class="font-display text-white min-h-screen calligraphy-bg">
+    <!-- Header -->
+    <div class="glass-card sticky top-0 z-50 px-6 py-4 mb-6">
+        <div class="flex items-center justify-between">
+            <button id="backBtn" class="p-2 rounded-full bg-white/5 hover:bg-white/10 transition-colors">
+                <span class="material-symbols-outlined text-2xl">arrow_back</span>
+            </button>
+            <h1 class="text-xl font-bold">Ayarlar</h1>
+            <div class="w-10"></div>
+        </div>
+    </div>
+
+    <!-- Main Content -->
+    <div class="container mx-auto px-4 pb-20 max-w-2xl">
+        <!-- Theme Settings -->
+        <div class="glass-card rounded-3xl mb-6">
+            <div class="setting-item">
+                <div class="flex items-center justify-between">
+                    <div class="flex items-center gap-3">
+                        <span class="material-symbols-outlined text-primary text-2xl">palette</span>
+                        <div>
+                            <h3 class="font-semibold">Tema</h3>
+                            <p class="text-sm text-white/60">Karanlık mod (Likit Kırmızı)</p>
+                        </div>
+                    </div>
+                    <select id="themeSelect" class="bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-sm">
+                        <option value="dark">Karanlık</option>
+                        <option value="light" disabled>Aydınlık (Yakında)</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="setting-item">
+                <div class="flex items-center justify-between">
+                    <div class="flex items-center gap-3">
+                        <span class="material-symbols-outlined text-primary text-2xl">text_fields</span>
+                        <div>
+                            <h3 class="font-semibold">Yazı Tipi Boyutu</h3>
+                            <p class="text-sm text-white/60">Metin büyüklüğünü ayarla</p>
+                        </div>
+                    </div>
+                    <select id="fontSizeSelect" class="bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-sm">
+                        <option value="small">Küçük</option>
+                        <option value="medium" selected>Orta</option>
+                        <option value="large">Büyük</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+
+        <!-- OCR Settings -->
+        <div class="glass-card rounded-3xl mb-6">
+            <div class="setting-item">
+                <div class="flex items-center justify-between">
+                    <div class="flex items-center gap-3">
+                        <span class="material-symbols-outlined text-primary text-2xl">document_scanner</span>
+                        <div>
+                            <h3 class="font-semibold">OCR Doğruluk Ayarı</h3>
+                            <p class="text-sm text-white/60">Metin tanıma hassasiyeti</p>
+                        </div>
+                    </div>
+                    <select id="ocrAccuracySelect" class="bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-sm">
+                        <option value="low">Düşük</option>
+                        <option value="medium" selected>Orta</option>
+                        <option value="high">Yüksek</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+
+        <!-- Dictionary Settings -->
+        <div class="glass-card rounded-3xl mb-6">
+            <div class="setting-item">
+                <div class="flex items-center justify-between">
+                    <div class="flex items-center gap-3">
+                        <span class="material-symbols-outlined text-primary text-2xl">download</span>
+                        <div>
+                            <h3 class="font-semibold">Offline Sözlük İndir</h3>
+                            <p class="text-sm text-white/60">Çevrimdışı kullanım için</p>
+                        </div>
+                    </div>
+                    <button id="downloadDictBtn" class="bg-primary hover:bg-primary/80 px-4 py-2 rounded-lg text-sm font-semibold transition-colors">
+                        İndir
+                    </button>
+                </div>
+            </div>
+
+            <div class="setting-item">
+                <div class="flex items-center justify-between">
+                    <div class="flex items-center gap-3">
+                        <span class="material-symbols-outlined text-primary text-2xl">volume_up</span>
+                        <div>
+                            <h3 class="font-semibold">Sesli Okuma</h3>
+                            <p class="text-sm text-white/60">TTS özelliği</p>
+                        </div>
+                    </div>
+                    <label class="relative inline-block w-12 h-6">
+                        <input type="checkbox" id="ttsToggle" checked class="sr-only peer">
+                        <div class="w-full h-full bg-white/20 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-6 peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
+                    </label>
+                </div>
+            </div>
+        </div>
+
+        <!-- Account Settings -->
+        <div class="glass-card rounded-3xl mb-6">
+            <div class="setting-item">
+                <div class="flex items-center justify-between">
+                    <div class="flex items-center gap-3">
+                        <span class="material-symbols-outlined text-primary text-2xl">person</span>
+                        <div>
+                            <h3 class="font-semibold">Hesap Bilgileri</h3>
+                            <p class="text-sm text-white/60" id="userEmail">Yükleniyor...</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="setting-item">
+                <button id="logoutBtn" class="w-full flex items-center justify-center gap-2 py-3 bg-white/5 hover:bg-white/10 rounded-lg transition-colors">
+                    <span class="material-symbols-outlined">logout</span>
+                    <span class="font-semibold">Çıkış Yap</span>
+                </button>
+            </div>
+        </div>
+
+        <!-- About -->
+        <div class="glass-card rounded-3xl">
+            <div class="setting-item">
+                <div class="flex items-center gap-3">
+                    <span class="material-symbols-outlined text-primary text-2xl">info</span>
+                    <div>
+                        <h3 class="font-semibold">Hakkında</h3>
+                        <p class="text-sm text-white/60">Risale-i Nur Lûgat v1.0.1</p>
+                        <p class="text-xs text-white/40 mt-1">© 2026 Risale-i Nur Okuma ve Lügat Uygulaması</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script type="module">
+        import { UserModule } from './js/modules/UserModule.js';
+        
+        const userModule = new UserModule();
+        
+        // Load settings from localStorage
+        const settings = JSON.parse(localStorage.getItem('settings') || '{}');
+        
+        // Display user info
+        const user = userModule.getCurrentUser();
+        if (user) {
+            document.getElementById('userEmail').textContent = user.email;
+        }
+        
+        // Load saved settings
+        if (settings.fontSize) {
+            document.getElementById('fontSizeSelect').value = settings.fontSize;
+        }
+        if (settings.ocrAccuracy) {
+            document.getElementById('ocrAccuracySelect').value = settings.ocrAccuracy;
+        }
+        if (settings.ttsEnabled !== undefined) {
+            document.getElementById('ttsToggle').checked = settings.ttsEnabled;
+        }
+        
+        // Save settings on change
+        function saveSettings() {
+            const settings = {
+                theme: document.getElementById('themeSelect').value,
+                fontSize: document.getElementById('fontSizeSelect').value,
+                ocrAccuracy: document.getElementById('ocrAccuracySelect').value,
+                ttsEnabled: document.getElementById('ttsToggle').checked
+            };
+            localStorage.setItem('settings', JSON.stringify(settings));
+        }
+        
+        document.getElementById('themeSelect').addEventListener('change', saveSettings);
+        document.getElementById('fontSizeSelect').addEventListener('change', saveSettings);
+        document.getElementById('ocrAccuracySelect').addEventListener('change', saveSettings);
+        document.getElementById('ttsToggle').addEventListener('change', saveSettings);
+        
+        // Back button
+        document.getElementById('backBtn').addEventListener('click', () => {
+            window.history.back();
+        });
+        
+        // Logout button
+        document.getElementById('logoutBtn').addEventListener('click', () => {
+            if (confirm('Çıkış yapmak istediğinize emin misiniz?')) {
+                userModule.logout();
+                window.location.href = 'index.html';
+            }
+        });
+        
+        // Download dictionary button
+        document.getElementById('downloadDictBtn').addEventListener('click', () => {
+            alert('Offline sözlük indirme özelliği yakında eklenecek');
+        });
+    </script>
+</body>
+</html>

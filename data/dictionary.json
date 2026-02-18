@@ -1,0 +1,164 @@
+{
+  "mesail": {
+    "word": "mesail",
+    "meaning": "Mes'eleler, meseleler, sorunlar",
+    "examples": ["Mesail-i diniyye: Dini meseleler"],
+    "root": "mes'ele"
+  },
+  "hakaik": {
+    "word": "hakaik",
+    "meaning": "Hakikatler, gerçekler",
+    "examples": ["Hakaik-i imaniye: İman hakikatleri"],
+    "root": "hakikat"
+  },
+  "hakikat": {
+    "word": "hakikat",
+    "meaning": "Gerçek, doğru olan şey",
+    "examples": ["Hakikat-i Kur'aniye: Kur'an'ın hakikati"],
+    "root": "hakk"
+  },
+  "imaniye": {
+    "word": "imaniye",
+    "meaning": "İmana ait, imanla ilgili",
+    "examples": ["Hakaik-i imaniye: İman hakikatleri"],
+    "root": "iman"
+  },
+  "imaniyenin": {
+    "word": "imaniyenin",
+    "meaning": "İmana ait, imanla ilgili",
+    "examples": ["Hakaik-i imaniyenin: İman hakikatlerinin"],
+    "root": "iman"
+  },
+  "inkişaf": {
+    "word": "inkişaf",
+    "meaning": "Açılma, gelişme, ortaya çıkma",
+    "examples": ["Hakikatlerin inkişafı"],
+    "root": "keşf"
+  },
+  "inkişafı": {
+    "word": "inkişafı",
+    "meaning": "Açılma, gelişme, ortaya çıkma",
+    "examples": ["Hakikatlerin inkişafı"],
+    "root": "keşf"
+  },
+  "tenvir": {
+    "word": "tenvir",
+    "meaning": "Aydınlatma, ışıklandırma",
+    "examples": ["Kalplerin tenviri"],
+    "root": "nur"
+  },
+  "tenviri": {
+    "word": "tenviri",
+    "meaning": "Aydınlatma, ışıklandırma",
+    "examples": ["Kalplerin tenviri"],
+    "root": "nur"
+  },
+  "diniyye": {
+    "word": "diniyye",
+    "meaning": "Dine ait, dini",
+    "examples": ["Mesail-i diniyye: Dini meseleler"],
+    "root": "din"
+  },
+  "teyid": {
+    "word": "teyid",
+    "meaning": "Doğrulama, destekleme, güçlendirme",
+    "examples": ["İmanı teyid etmek"],
+    "root": "eyy"
+  },
+  "küllî": {
+    "word": "küllî",
+    "meaning": "Genel, bütüne ait, külli",
+    "examples": ["Küllî kaideler: Genel kurallar"],
+    "root": "kül"
+  },
+  "kaideler": {
+    "word": "kaideler",
+    "meaning": "Kurallar, prensipler",
+    "examples": ["Küllî kaideler"],
+    "root": "kaide"
+  },
+  "cüz'î": {
+    "word": "cüz'î",
+    "meaning": "Küçük, parça, cüzi",
+    "examples": ["Cüz'î meseleler"],
+    "root": "cüz"
+  },
+  "meselelere": {
+    "word": "meselelere",
+    "meaning": "Meselelere, sorunlara",
+    "examples": ["Cüz'î meselelere tatbik"],
+    "root": "mes'ele"
+  },
+  "tatbik": {
+    "word": "tatbik",
+    "meaning": "Uygulama, uyarlama",
+    "examples": ["Kuralları tatbik etmek"],
+    "root": "tabk"
+  },
+  "nur": {
+    "word": "nur",
+    "meaning": "Işık, aydınlık",
+    "examples": ["Nur gibi parlak"],
+    "root": "nur"
+  },
+  "kur'aniye": {
+    "word": "kur'aniye",
+    "meaning": "Kur'an'a ait",
+    "examples": ["Hakikat-i Kur'aniye"],
+    "root": "Kur'an"
+  },
+  "zamanda": {
+    "word": "zamanda",
+    "meaning": "Zamanda, dönemde",
+    "examples": ["Bu zamanda"],
+    "root": "zaman"
+  },
+  "zamanıdır": {
+    "word": "zamanıdır",
+    "meaning": "Zamanıdır, vaktidir",
+    "examples": ["Hakikatlerin inkişafı zamanıdır"],
+    "root": "zaman"
+  },
+  "esaslarını": {
+    "word": "esaslarını",
+    "meaning": "Temel ilkeleri, esasları",
+    "examples": ["İman esaslarını"],
+    "root": "esas"
+  },
+  "olunur": {
+    "word": "olunur",
+    "meaning": "Yapılır, edilir",
+    "examples": ["Tatbik olunur"],
+    "root": "ol"
+  },
+  "gösterir": {
+    "word": "gösterir",
+    "meaning": "Gösterir, ortaya koyar",
+    "examples": ["Nur gibi gösterir"],
+    "root": "göster"
+  },
+  "parlak": {
+    "word": "parlak",
+    "meaning": "Parlak, aydınlık, ışıklı",
+    "examples": ["Parlak bir nur"],
+    "root": "parla"
+  },
+  "hakaik-i": {
+    "word": "hakaik-i",
+    "meaning": "Hakikatler, gerçekler (izafet)",
+    "examples": ["Hakaik-i imaniye"],
+    "root": "hakikat"
+  },
+  "mesail-i": {
+    "word": "mesail-i",
+    "meaning": "Mes'eleler, meseleler (izafet)",
+    "examples": ["Mesail-i diniyye"],
+    "root": "mes'ele"
+  },
+  "hakikat-i": {
+    "word": "hakikat-i",
+    "meaning": "Hakikat (izafet)",
+    "examples": ["Hakikat-i Kur'aniye"],
+    "root": "hakikat"
+  }
+}
