@@ -1113,7 +1113,6 @@ const UIModule = (() => {
   //  PAGE: SEARCH (Lûgat)
   // ============================================================
   function renderSearch() {
-    const allWords = DictionaryModule.getAll();
     appRoot().innerHTML = `
       <div class="page relative flex flex-col min-h-screen w-full max-w-md mx-auto liquid-gradient-bg">
         <div class="fixed top-[-10%] right-[-10%] w-[400px] h-[400px] bg-primary/15 rounded-full blur-[100px] opacity-30 pointer-events-none"></div>
@@ -1133,16 +1132,12 @@ const UIModule = (() => {
           </header>
 
           <!-- Results -->
-          <div id="search-results" class="flex-1 px-4 py-4 space-y-2 overflow-y-auto">
-            ${allWords.map(w => `
-              <button class="search-word-item w-full text-left glass-card rounded-2xl p-4 flex items-center justify-between group" data-word="${w.word}">
-                <div class="flex-1 min-w-0">
-                  <span class="block text-white font-semibold text-base">${w.word}</span>
-                  <span class="block text-white/40 text-sm truncate mt-0.5">${w.meaning}</span>
-                </div>
-                <span class="material-symbols-outlined text-white/20 group-hover:text-primary text-xl ml-3 flex-shrink-0">chevron_right</span>
-              </button>
-            `).join('')}
+          <div id="search-results" class="flex-1 px-4 py-4 overflow-y-auto">
+            <div class="text-center py-20">
+              <span class="material-symbols-outlined text-white/15 text-6xl block mb-3">menu_book</span>
+              <p class="text-white/30 text-sm">Aramak için bir kelime yazın</p>
+              <p class="text-white/15 text-xs mt-1">57.768 kelime mevcut</p>
+            </div>
           </div>
         </div>
 
@@ -1153,40 +1148,61 @@ const UIModule = (() => {
     bindSearchEvents();
   }
 
+  function _renderWordItems(results) {
+    if (!results || results.length === 0) {
+      return `<div class="text-center py-16"><span class="material-symbols-outlined text-white/20 text-5xl block mb-3">search_off</span><p class="text-white/40 text-sm">Sonuç bulunamadı</p></div>`;
+    }
+    const limited = results.slice(0, 50);
+    const more = results.length > 50 ? `<p class="text-center text-white/25 text-xs py-3">+${results.length - 50} daha… aramayı daraltın</p>` : '';
+    return limited.map(w => `
+      <button class="search-word-item w-full text-left glass-card rounded-2xl p-4 flex items-center justify-between group" data-word="${w.word}">
+        <div class="flex-1 min-w-0">
+          <span class="block text-white font-semibold text-base">${w.word}</span>
+          <span class="block text-white/40 text-sm truncate mt-0.5">${w.meaning ? w.meaning.substring(0, 80) : ''}</span>
+        </div>
+        <span class="material-symbols-outlined text-white/20 group-hover:text-primary text-xl ml-3 flex-shrink-0">chevron_right</span>
+      </button>
+    `).join('') + more;
+  }
+
   function bindSearchEvents() {
     document.getElementById('search-back-btn')?.addEventListener('click', () => window.navigateTo('home'));
 
     const input = document.getElementById('search-input');
     const resultsContainer = document.getElementById('search-results');
 
-    input?.addEventListener('input', () => {
-      const q = input.value.trim();
-      const results = q ? DictionaryModule.search(q) : DictionaryModule.getAll();
-      resultsContainer.innerHTML = results.length === 0
-        ? `<div class="text-center py-16"><span class="material-symbols-outlined text-white/20 text-5xl block mb-3">search_off</span><p class="text-white/40 text-sm">Sonuç bulunamadı</p></div>`
-        : results.map(w => `
-          <button class="search-word-item w-full text-left glass-card rounded-2xl p-4 flex items-center justify-between group" data-word="${w.word}">
-            <div class="flex-1 min-w-0">
-              <span class="block text-white font-semibold text-base">${w.word}</span>
-              <span class="block text-white/40 text-sm truncate mt-0.5">${w.meaning}</span>
-            </div>
-            <span class="material-symbols-outlined text-white/20 group-hover:text-primary text-xl ml-3 flex-shrink-0">chevron_right</span>
-          </button>
-        `).join('');
-      bindWordItemClicks();
+    // Event delegation — one listener on the container instead of N listeners
+    resultsContainer?.addEventListener('click', (e) => {
+      const btn = e.target.closest('.search-word-item');
+      if (!btn) return;
+      const word = btn.getAttribute('data-word');
+      const result = DictionaryModule.lookup(word);
+      if (result.found) showWordModal(result.entry, result.entries);
     });
 
-    bindWordItemClicks();
+    // Debounced search input
+    let _searchTimer;
+    input?.addEventListener('input', () => {
+      clearTimeout(_searchTimer);
+      _searchTimer = setTimeout(() => {
+        const q = input.value.trim();
+        if (!q) {
+          resultsContainer.innerHTML = `
+            <div class="text-center py-20">
+              <span class="material-symbols-outlined text-white/15 text-6xl block mb-3">menu_book</span>
+              <p class="text-white/30 text-sm">Aramak için bir kelime yazın</p>
+              <p class="text-white/15 text-xs mt-1">57.768 kelime mevcut</p>
+            </div>`;
+          return;
+        }
+        const results = DictionaryModule.search(q);
+        resultsContainer.innerHTML = `<div class="space-y-2">${_renderWordItems(results)}</div>`;
+      }, 200);
+    });
   }
 
   function bindWordItemClicks() {
-    document.querySelectorAll('.search-word-item').forEach(item => {
-      item.addEventListener('click', () => {
-        const word = item.getAttribute('data-word');
-        const result = DictionaryModule.lookup(word);
-        if (result.found) showWordModal(result.entry, result.entries);
-      });
-    });
+    // Kept for backward compatibility — event delegation is used now in bindSearchEvents
   }
 
   // ============================================================
