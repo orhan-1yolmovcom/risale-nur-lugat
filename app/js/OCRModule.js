@@ -368,15 +368,100 @@ const OCRModule = (() => {
       const tokens = lines.flat();
 
       // ── Build words_found via JS dictionary lookup (free, O(1)) ──
+      if (typeof DictionaryModule !== 'undefined' && typeof DictionaryModule.load === 'function') {
+        await DictionaryModule.load();
+      }
       _setProgress(92, 'Lügat eşleştiriliyor...', `${tokens.length} kelime taranıyor`);
       const wordsFound = [];
       const seenWords  = new Set();
+
+      const safeLookup = (rawWord) => {
+        try {
+          return (typeof DictionaryModule !== 'undefined' && typeof DictionaryModule.lookup === 'function')
+            ? DictionaryModule.lookup(rawWord)
+            : null;
+        } catch (_) {
+          return null;
+        }
+      };
+
+      const addEntries = (entries) => {
+        for (const e of (entries || [])) {
+          const key = (e.word || '').toUpperCase();
+          if (!key || seenWords.has(key)) continue;
+          seenWords.add(key);
+          wordsFound.push({
+            word:     e.word     || '',
+            meaning:  e.meaning  || '',
+            root:     e.stem     || '',
+            example:  '',
+            synonyms: [],
+          });
+        }
+      };
+
+      const tryMatch = (rawWord) => {
+        if (!rawWord || String(rawWord).trim().length < 2) return false;
+
+        const direct = safeLookup(rawWord);
+        if (direct?.found) {
+          addEntries(direct.entries || [direct.entry]);
+          return true;
+        }
+
+        // Izafet / OCR suffix fallback: "şahs-ı" -> "şahs"
+        const trimmed = String(rawWord).replace(/[-‐‑‒–—]?[ıiuü]$/i, '');
+        if (trimmed && trimmed !== rawWord) {
+          const alt = safeLookup(trimmed);
+          if (alt?.found) {
+            addEntries(alt.entries || [alt.entry]);
+            return true;
+          }
+        }
+
+        // Conservative suggestion fallback
+        if (direct?.suggestions?.length) {
+          const candidate = direct.suggestions[0];
+          const nRaw = (typeof DictionaryModule !== 'undefined' && typeof DictionaryModule.normalize === 'function')
+            ? DictionaryModule.normalize(rawWord)
+            : String(rawWord).toLowerCase();
+          const nCand = (typeof DictionaryModule !== 'undefined' && typeof DictionaryModule.normalize === 'function')
+            ? DictionaryModule.normalize(candidate.stem || candidate.word || '')
+            : String(candidate.word || '').toLowerCase();
+          if (nRaw && nCand && (nRaw === nCand || nRaw.startsWith(nCand) || nCand.startsWith(nRaw))) {
+            addEntries([candidate]);
+            return true;
+          }
+        }
+
+        return false;
+      };
+
+      // 1) Phrase matching (2-4 grams): captures entries like "ŞAHS-I MANEVÎ"
+      for (const line of lines) {
+        const row = (line || []).map(w => String(w || '').trim()).filter(Boolean);
+        if (row.length < 2) continue;
+
+        const used = new Array(row.length).fill(false);
+        for (let n = Math.min(4, row.length); n >= 2; n--) {
+          for (let i = 0; i <= row.length - n; i++) {
+            if (used.slice(i, i + n).some(Boolean)) continue;
+            const phrase = row.slice(i, i + n).join(' ');
+            if (tryMatch(phrase)) {
+              for (let k = i; k < i + n; k++) used[k] = true;
+            }
+          }
+        }
+      }
+
+      // 2) Single token matching
       for (const token of tokens) {
         if (!token || token.length < 2) continue;
-        let lookup;
-        try { lookup = (typeof DictionaryModule !== 'undefined') ? DictionaryModule.lookup(token) : null; }
-        catch (_) { lookup = null; }
-        if (!lookup || !lookup.found) continue;
+        const lookup = safeLookup(token);
+        if (!lookup || !lookup.found) {
+          tryMatch(token);
+          continue;
+        }
         const entries = lookup.entries || [lookup.entry];
         for (const e of entries) {
           const key = (e.word || '').toUpperCase();

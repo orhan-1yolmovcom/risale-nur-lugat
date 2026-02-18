@@ -228,7 +228,16 @@ const DictionaryModule = (() => {
     if (!word) return '';
     return word
       .toLowerCase()
-      .replace(/[.,;:!?'"()\[\]{}<>…""''«»–—\-]/g, '')
+      .replace(/[âáàä]/g, 'a')
+      .replace(/[êéèë]/g, 'e')
+      .replace(/[îíìï]/g, 'i')
+      .replace(/[ûúùü]/g, 'u')
+      .replace(/[ôóòö]/g, 'o')
+      .replace(/[ı]/g, 'i')
+      .normalize('NFKD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[’`´]/g, "'")
+      .replace(/[.,;:!?"'()\[\]{}<>…«»–—\-]/g, '')
       .replace(/\s+/g, '')
       .trim();
   }
