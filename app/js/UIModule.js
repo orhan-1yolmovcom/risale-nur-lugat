@@ -736,7 +736,8 @@ const UIModule = (() => {
       let viewScale  = 1;
       let viewTx     = 0;
       let viewTy     = 0;
-      let pinching   = false;
+      let pinching        = false;
+      let pinchJustEnded = false;  // guard: block the pointerdown right after pinch release
       let touchCount = 0;
       let pinchStartDist = 0;
       let pinchStartScale = 1;
@@ -859,8 +860,18 @@ const UIModule = (() => {
       fc.addEventListener('touchstart', (e) => {
         touchCount = e.touches.length;
         if (e.touches.length === 2) {
+          // Cancel any stroke that the first finger accidentally started
+          if (drawing) {
+            drawing = false;
+            strkCtx.clearRect(0, 0, physW, physH);
+            // Roll back the undo snapshot taken in pointerdown for that touch
+            if (undoStack.length > 0) {
+              maskCtx.putImageData(undoStack.pop(), 0, 0);
+            }
+            scheduleRender();
+          }
           pinching = true;
-          drawing = false;
+          pinchJustEnded = false;
           const [t1, t2] = e.touches;
           pinchStartDist = getTouchDist(t1, t2) || 1;
           pinchStartScale = viewScale;
@@ -889,11 +900,15 @@ const UIModule = (() => {
 
       fc.addEventListener('touchend', (e) => {
         touchCount = e.touches.length;
-        if (e.touches.length < 2) pinching = false;
+        if (e.touches.length < 2) {
+          if (pinching) pinchJustEnded = true; // block next pointerdown
+          pinching = false;
+        }
       }, { passive: true });
 
       fc.addEventListener('touchcancel', () => {
         touchCount = 0;
+        if (pinching) pinchJustEnded = true;
         pinching = false;
       }, { passive: true });
 
@@ -901,6 +916,9 @@ const UIModule = (() => {
       fc.addEventListener('pointerdown', e => {
         if (pinching || touchCount > 1) return;
         if (!e.isPrimary) return;     // ignore secondary touches (pinch)
+        // If we just finished a pinch gesture, swallow this first touch
+        // to prevent an accidental dot/stroke from the finger lifting
+        if (pinchJustEnded) { pinchJustEnded = false; return; }
         e.preventDefault();
         fc.setPointerCapture(e.pointerId);
         if (ghostEl) ghostEl.classList.remove('show');
@@ -1076,91 +1094,95 @@ const UIModule = (() => {
           </div>
         </div>
 
-        <!-- Top Control Bar -->
-        <div class="absolute top-0 left-0 w-full z-20 px-5 pb-3 flex justify-between items-center"
-             style="padding-top:max(env(safe-area-inset-top, 0px), 18px);">
-          <button id="scan-back-btn" class="p-2.5 rounded-full bg-black/40 backdrop-blur-sm border border-white/10 text-white active:scale-90 transition-transform">
-            <span class="material-symbols-outlined text-[24px]">arrow_back</span>
+        <!-- Top Control Bar (absolute overlay, stays above everything) -->
+        <div class="absolute top-0 left-0 w-full z-20 px-4 pb-3 flex justify-between items-center"
+             style="padding-top:max(env(safe-area-inset-top, 0px), 14px);">
+          <button id="scan-back-btn" class="w-10 h-10 rounded-full bg-black/50 backdrop-blur-sm border border-white/12 text-white flex items-center justify-center active:scale-90 transition-transform">
+            <span class="material-symbols-outlined text-[22px]">arrow_back</span>
           </button>
-          <div class="flex items-center gap-2 px-4 py-1.5 rounded-full bg-black/50 backdrop-blur-sm border border-white/10">
+          <div class="flex items-center gap-2 px-4 py-1.5 rounded-full bg-black/55 backdrop-blur-sm border border-white/12">
             <span id="scan-status-dot" class="w-2 h-2 rounded-full bg-primary animate-pulse"></span>
             <span id="scan-status-text" class="text-[11px] font-bold tracking-widest text-white/90">LIVE</span>
           </div>
-          <button id="scan-flash-btn" class="p-2.5 rounded-full bg-black/40 backdrop-blur-sm border border-white/10 text-white active:scale-90 transition-transform">
-            <span class="material-symbols-outlined text-[24px]">flash_on</span>
+          <button id="scan-flash-btn" class="w-10 h-10 rounded-full bg-black/50 backdrop-blur-sm border border-white/12 text-white flex items-center justify-center active:scale-90 transition-transform">
+            <span class="material-symbols-outlined text-[22px]">flash_on</span>
           </button>
         </div>
 
-        <!-- ─── Viewfinder ───
-             box-shadow: 0 0 0 100vmax rgba(0,0,0,N)  ← darkens everything OUTSIDE the frame
-             No background on the element → video shows through inside (clear view)
+        <!-- ─── Flex column layout overlay (z-10) ───────────────
+             Top spacer = top bar height + safe area
+             Middle flex-1 = viewfinder + hint centered
+             Bottom = action bar, in normal flow (NOT absolute)
         -->
-           <div class="relative z-10 w-full h-full flex flex-col justify-center items-center"
-             style="padding-bottom: max(env(safe-area-inset-bottom, 0px), 118px);">
-          <div id="scan-frame"
-               class="relative rounded-3xl"
-               style="width:82%; max-width:340px; aspect-ratio:3/4;
-                      box-shadow: 0 0 0 100vmax rgba(0,0,0,0.72);">
+        <div class="absolute inset-0 z-10 flex flex-col"
+             style="padding-top:calc(max(env(safe-area-inset-top, 0px), 14px) + 56px);">
 
-            <!-- Frame border -->
-            <div class="absolute inset-0 rounded-3xl border border-white/10 pointer-events-none"></div>
+          <!-- Viewfinder area: grows to fill available space, centers content -->
+          <div class="flex-1 flex flex-col justify-center items-center">
+            <div id="scan-frame"
+                 class="relative rounded-3xl"
+                 style="width:82%; max-width:340px; aspect-ratio:3/4;
+                        box-shadow: 0 0 0 100vmax rgba(0,0,0,0.72);">
 
-            <!-- Crimson corner accents (glowing) -->
-            <div class="absolute top-0 left-0   w-9 h-9 border-t-[3px] border-l-[3px] border-primary rounded-tl-3xl" style="filter:drop-shadow(0 0 8px rgba(199,0,36,0.95))"></div>
-            <div class="absolute top-0 right-0  w-9 h-9 border-t-[3px] border-r-[3px] border-primary rounded-tr-3xl" style="filter:drop-shadow(0 0 8px rgba(199,0,36,0.95))"></div>
-            <div class="absolute bottom-0 left-0  w-9 h-9 border-b-[3px] border-l-[3px] border-primary rounded-bl-3xl" style="filter:drop-shadow(0 0 8px rgba(199,0,36,0.95))"></div>
-            <div class="absolute bottom-0 right-0 w-9 h-9 border-b-[3px] border-r-[3px] border-primary rounded-br-3xl" style="filter:drop-shadow(0 0 8px rgba(199,0,36,0.95))"></div>
+              <!-- Frame border -->
+              <div class="absolute inset-0 rounded-3xl border border-white/10 pointer-events-none"></div>
 
-            <!-- Animated scan line (inside clipped container) -->
-            <div class="absolute inset-0 rounded-3xl overflow-hidden pointer-events-none">
-              <div class="w-full h-24 scan-line absolute top-[-20%]"></div>
+              <!-- Crimson corner accents (glowing) -->
+              <div class="absolute top-0 left-0   w-9 h-9 border-t-[3px] border-l-[3px] border-primary rounded-tl-3xl" style="filter:drop-shadow(0 0 8px rgba(199,0,36,0.95))"></div>
+              <div class="absolute top-0 right-0  w-9 h-9 border-t-[3px] border-r-[3px] border-primary rounded-tr-3xl" style="filter:drop-shadow(0 0 8px rgba(199,0,36,0.95))"></div>
+              <div class="absolute bottom-0 left-0  w-9 h-9 border-b-[3px] border-l-[3px] border-primary rounded-bl-3xl" style="filter:drop-shadow(0 0 8px rgba(199,0,36,0.95))"></div>
+              <div class="absolute bottom-0 right-0 w-9 h-9 border-b-[3px] border-r-[3px] border-primary rounded-br-3xl" style="filter:drop-shadow(0 0 8px rgba(199,0,36,0.95))"></div>
+
+              <!-- Animated scan line (inside clipped container) -->
+              <div class="absolute inset-0 rounded-3xl overflow-hidden pointer-events-none">
+                <div class="w-full h-24 scan-line absolute top-[-20%]"></div>
+              </div>
+
+              <!-- Crosshair -->
+              <div class="absolute inset-0 flex items-center justify-center pointer-events-none opacity-20">
+                <div class="w-8 h-0.5 bg-white rounded-full"></div>
+                <div class="h-8 w-0.5 bg-white rounded-full absolute"></div>
+              </div>
             </div>
 
-            <!-- Crosshair -->
-            <div class="absolute inset-0 flex items-center justify-center pointer-events-none opacity-20">
-              <div class="w-8 h-0.5 bg-white rounded-full"></div>
-              <div class="h-8 w-0.5 bg-white rounded-full absolute"></div>
+            <!-- Hint label just below frame -->
+            <div class="mt-5 px-4 py-2 rounded-full bg-black/55 backdrop-blur-sm border border-white/10 flex items-center gap-2">
+              <span class="material-symbols-outlined text-primary text-sm">center_focus_strong</span>
+              <p class="text-[11px] font-medium text-white/80 tracking-wide">Metni çerçeve içine hizalayın</p>
             </div>
           </div>
 
-          <!-- Hint label (above bottom bar, below frame) -->
-          <div class="mt-7 px-5 py-2 rounded-full bg-black/55 backdrop-blur-sm border border-white/10 flex items-center gap-2"
-               style="position:relative; z-index:20;">
-            <span class="material-symbols-outlined text-primary text-sm">center_focus_strong</span>
-            <p class="text-[11px] font-medium text-white/80 tracking-wide">Metni çerçeve içine hizalayın</p>
-          </div>
-        </div>
+          <!-- Bottom Action Bar: in flow, right below viewfinder -->
+          <div class="w-full px-6 pt-5 flex items-center justify-between
+                      bg-gradient-to-t from-black/95 via-black/70 to-transparent"
+               style="padding-bottom:max(env(safe-area-inset-bottom, 0px), 20px);">
 
-        <!-- Bottom Action Bar -->
-        <div class="absolute bottom-0 left-0 w-full z-20 pt-10 px-6
-                    bg-gradient-to-t from-black via-black/80 to-transparent
-                    flex items-end justify-between"
-             style="padding-bottom: max(env(safe-area-inset-bottom, 0px), 18px);">
-          <!-- Gallery -->
-          <div class="flex flex-col items-center gap-1.5">
-            <button id="scan-gallery-btn" class="w-12 h-12 rounded-xl border border-white/20 bg-black/45 backdrop-blur-sm flex items-center justify-center active:scale-90 transition-transform">
-              <span class="material-symbols-outlined text-white/60 text-2xl">image</span>
-            </button>
-            <span class="text-[10px] text-white/50 uppercase tracking-wider">Galeri</span>
-            <input type="file" id="scan-file-input" accept="image/*" class="hidden" />
-          </div>
+            <!-- Gallery -->
+            <div class="flex flex-col items-center gap-1.5">
+              <button id="scan-gallery-btn" class="w-12 h-12 rounded-2xl border border-white/20 bg-white/8 backdrop-blur-sm flex items-center justify-center active:scale-90 transition-transform">
+                <span class="material-symbols-outlined text-white/65 text-2xl">image</span>
+              </button>
+              <span class="text-[10px] text-white/45 uppercase tracking-wider">Galeri</span>
+              <input type="file" id="scan-file-input" accept="image/*" class="hidden" />
+            </div>
 
-          <!-- Shutter -->
-          <div class="relative -top-1">
-            <div class="absolute inset-0 bg-primary/40 rounded-full blur-xl animate-pulse"></div>
-            <button id="scan-capture-btn"
-                    class="relative liquid-button flex items-center justify-center border-4 border-white/20 active:scale-95 transition-transform duration-100 group"
-                    style="width:78px; height:78px; border-radius:50%;">
-              <span class="material-symbols-outlined text-white text-[33px] group-active:scale-90 transition-transform">photo_camera</span>
-            </button>
-          </div>
+            <!-- Shutter -->
+            <div class="relative flex items-center justify-center">
+              <div class="absolute w-20 h-20 bg-primary/30 rounded-full blur-xl animate-pulse"></div>
+              <button id="scan-capture-btn"
+                      class="relative liquid-button flex items-center justify-center border-4 border-white/25 active:scale-95 transition-transform duration-100 group"
+                      style="width:76px; height:76px; border-radius:50%;">
+                <span class="material-symbols-outlined text-white text-[32px] group-active:scale-90 transition-transform">photo_camera</span>
+              </button>
+            </div>
 
-          <!-- History -->
-          <div class="flex flex-col items-center gap-1.5">
-            <button id="scan-history-btn" class="w-12 h-12 rounded-xl border border-white/10 bg-white/8 flex items-center justify-center active:scale-90 transition-transform">
-              <span class="material-symbols-outlined text-white/70 text-2xl">history</span>
-            </button>
-            <span class="text-[10px] text-white/50 uppercase tracking-wider">Geçmiş</span>
+            <!-- History -->
+            <div class="flex flex-col items-center gap-1.5">
+              <button id="scan-history-btn" class="w-12 h-12 rounded-2xl border border-white/12 bg-white/6 flex items-center justify-center active:scale-90 transition-transform">
+                <span class="material-symbols-outlined text-white/65 text-2xl">history</span>
+              </button>
+              <span class="text-[10px] text-white/45 uppercase tracking-wider">Geçmiş</span>
+            </div>
           </div>
         </div>
 
