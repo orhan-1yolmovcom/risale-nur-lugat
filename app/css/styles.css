@@ -254,6 +254,43 @@ input[type=range]::-webkit-slider-thumb {
   transition: opacity 0.3s ease;
 }
 
+/* ---------- Brush size range slider ---------- */
+.brush-size-range {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(139, 92, 246, 0.28);
+  outline: none;
+  cursor: pointer;
+}
+.brush-size-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 22px; height: 22px;
+  border-radius: 50%;
+  background: rgb(139, 92, 246);
+  box-shadow: 0 0 8px rgba(139,92,246,0.65);
+  cursor: pointer;
+  border: 2px solid rgba(255,255,255,0.2);
+}
+.brush-size-range::-moz-range-thumb {
+  width: 22px; height: 22px;
+  border-radius: 50%;
+  background: rgb(139, 92, 246);
+  border: 2px solid rgba(255,255,255,0.2);
+  cursor: pointer;
+}
+.brush-size-range::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(139, 92, 246, 0.28);
+}
+.brush-size-range::-moz-range-track {
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(139, 92, 246, 0.28);
+}
+
 /* ---------- Settings glass panel ---------- */
 .settings-glass {
   background: linear-gradient(145deg, rgba(40, 40, 40, 0.4) 0%, rgba(20, 20, 20, 0.4) 100%);

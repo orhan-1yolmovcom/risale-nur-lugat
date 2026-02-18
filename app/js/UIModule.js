@@ -422,11 +422,15 @@ const UIModule = (() => {
    * Opens the brush-selection overlay with srcCanvas as the frozen background.
    *
    * Architecture:
-   *   strkC  — per-stroke scratch canvas; drawn SOLID (alpha=1); cleared after each stroke
-   *   maskC  — persistent canvas; each finished stroke is composited in at STROKE_ALPHA
-   *   render — photo → maskC (committed) → strkC (live preview at STROKE_ALPHA)
+   *   strkC  — per-stroke scratch; drawn SOLID (alpha 1); cleared after each stroke ends
+   *   maskC  — persistent mask; each finished stroke is blit'd at STROKE_ALPHA
+   *   render — photo → maskC (committed) → strkC (live at STROKE_ALPHA preview)
    *
-   * This prevents within-stroke alpha accumulation while still building up across strokes.
+   * Key improvements over previous version:
+   *   • getCoalescedEvents() → all intermediate pointer positions → zero gaps on fast swipes
+   *   • brushR is a reactive let → slider updates it in real time
+   *   • RAF-throttled rendering → never exceeds 60 fps, no layout thrash
+   *   • isPrimary guard → ignores secondary touches so pinch-zoom won't corrupt stroke
    */
   function _showBrushView(srcCanvas) {
     const view       = document.getElementById('crop-select-view');
@@ -450,16 +454,12 @@ const UIModule = (() => {
       const physW = Math.round(dispW * dpr);
       const physH = Math.round(dispH * dpr);
 
-      // ── Clone canvas to reset all event listeners ────────────
+      // ── Clone canvas — wipes previous listeners ──────────────
       const fc = canvasEl.cloneNode(false);
       canvasEl.parentNode.replaceChild(fc, canvasEl);
       fc.width  = physW;
       fc.height = physH;
-      fc.style.width       = dispW + 'px';
-      fc.style.height      = dispH + 'px';
-      fc.style.touchAction = 'none';
-      fc.style.userSelect  = 'none';
-      fc.style.cursor      = 'crosshair';
+      fc.style.cssText = `display:block;width:${dispW}px;height:${dispH}px;touch-action:none;user-select:none;cursor:crosshair;`;
 
       const ctx = fc.getContext('2d');
       ctx.scale(dpr, dpr);
@@ -473,55 +473,63 @@ const UIModule = (() => {
       iX = (dispW - iW) / 2;
       iY = (dispH - iH) / 2;
 
-      // ── Persistent mask (stores committed strokes) ───────────
-      const maskC   = document.createElement('canvas');
-      maskC.width   = physW;
-      maskC.height  = physH;
-      const maskCtx = maskC.getContext('2d');
-      maskCtx.scale(dpr, dpr);
+      // ── Canvases ─────────────────────────────────────────────
+      function makeOffscreen() {
+        const c = document.createElement('canvas');
+        c.width = physW; c.height = physH;
+        const cx = c.getContext('2d'); cx.scale(dpr, dpr);
+        return { c, cx };
+      }
+      const { c: maskC,  cx: maskCtx  } = makeOffscreen();
+      const { c: strkC,  cx: strkCtx  } = makeOffscreen();
 
-      // ── Per-stroke scratch (solid, merged on stroke-end) ─────
-      const strkC   = document.createElement('canvas');
-      strkC.width   = physW;
-      strkC.height  = physH;
-      const strkCtx = strkC.getContext('2d');
-      strkCtx.scale(dpr, dpr);
+      // ── Reactive brush radius ────────────────────────────────
+      let brushR = Math.max(20, Math.min(24, dispW * 0.055));
+      const BRUSH_COLOR  = 'rgba(139, 92, 246, 1)'; // solid on scratch
+      const STROKE_ALPHA = 0.52;                     // committed opacity
 
-      // Brush radius 20-24px in CSS pixels; full alpha on strkC
-      const BRUSH_R     = Math.max(20, Math.min(24, dispW * 0.055));
-      const BRUSH_COLOR = 'rgba(139, 92, 246, 1)'; // solid on scratch canvas
-      const STROKE_ALPHA = 0.52;                    // alpha when committing to maskC
+      // Wire slider
+      const sizeSlider = document.getElementById('brush-size-slider');
+      const sizeLabel  = document.getElementById('brush-size-label');
+      if (sizeSlider) {
+        sizeSlider.value = Math.round(brushR);
+        if (sizeLabel) sizeLabel.textContent = Math.round(brushR);
+        sizeSlider.oninput = () => {
+          brushR = parseInt(sizeSlider.value, 10);
+          if (sizeLabel) sizeLabel.textContent = brushR;
+        };
+      }
 
-      let undoStack = [];
-      let drawing   = false;
+      let undoStack  = [];
+      let drawing    = false;
       let lx = 0, ly = 0;
+      let rafPending = false;
 
-      // ── Render: photo → committed mask → live stroke ─────────
+      // ── RAF-throttled render ─────────────────────────────────
       function render() {
         ctx.clearRect(0, 0, dispW, dispH);
         ctx.fillStyle = '#000';
         ctx.fillRect(0, 0, dispW, dispH);
         ctx.drawImage(srcCanvas, iX, iY, iW, iH);
-
-        // Committed strokes at full alpha (already baked in at STROKE_ALPHA)
         ctx.drawImage(maskC, 0, 0, dispW, dispH);
-
-        // Live stroke: show at STROKE_ALPHA so preview matches final look
         ctx.save();
         ctx.globalAlpha = STROKE_ALPHA;
         ctx.drawImage(strkC, 0, 0, dispW, dispH);
         ctx.restore();
+        rafPending = false;
+      }
+      function scheduleRender() {
+        if (!rafPending) { rafPending = true; requestAnimationFrame(render); }
       }
 
-      // ── Brush segment: dense interpolated capsule ────────────
-      // Samples every BRUSH_R * 0.4 px — ensures no gaps even at max swipe speed
+      // ── Dense brush segment ──────────────────────────────────
+      // Step = 22% of radius → absolutely no visible gaps at any swipe speed
       function brushSegment(pctx, ax, ay, bx, by) {
-        const dist  = Math.hypot(bx - ax, by - ay);
-        const steps = Math.max(1, Math.ceil(dist / (BRUSH_R * 0.4)));
-
+        const dist     = Math.hypot(bx - ax, by - ay);
+        const stepSize = Math.max(0.5, brushR * 0.22);
+        const steps    = Math.max(1, Math.ceil(dist / stepSize));
         pctx.strokeStyle = BRUSH_COLOR;
-        pctx.fillStyle   = BRUSH_COLOR;
-        pctx.lineWidth   = BRUSH_R * 2;
+        pctx.lineWidth   = brushR * 2;
         pctx.lineCap     = 'round';
         pctx.lineJoin    = 'round';
         pctx.beginPath();
@@ -533,10 +541,11 @@ const UIModule = (() => {
         pctx.stroke();
       }
 
-      render(); // initial: frozen photo only
+      render(); // initial frozen photo
 
       // ── Pointer events ───────────────────────────────────────
       fc.addEventListener('pointerdown', e => {
+        if (!e.isPrimary) return;     // ignore secondary touches (pinch)
         e.preventDefault();
         fc.setPointerCapture(e.pointerId);
         drawing = true;
@@ -545,46 +554,43 @@ const UIModule = (() => {
         lx = e.clientX - r.left;
         ly = e.clientY - r.top;
 
-        // Save maskC snapshot for undo BEFORE this stroke
         undoStack.push(maskCtx.getImageData(0, 0, physW, physH));
         if (undoStack.length > 30) undoStack.shift();
 
-        // Clear scratch and draw initial dot
         strkCtx.clearRect(0, 0, physW, physH);
         strkCtx.fillStyle = BRUSH_COLOR;
         strkCtx.beginPath();
-        strkCtx.arc(lx, ly, BRUSH_R, 0, Math.PI * 2);
+        strkCtx.arc(lx, ly, brushR, 0, Math.PI * 2);
         strkCtx.fill();
-        render();
+        scheduleRender();
       });
 
       fc.addEventListener('pointermove', e => {
-        if (!drawing) return;
+        if (!drawing || !e.isPrimary) return;
         e.preventDefault();
-        const r  = fc.getBoundingClientRect();
-        const cx = e.clientX - r.left;
-        const cy = e.clientY - r.top;
-
-        // Dense interpolated segment → no gaps on fast swipes
-        brushSegment(strkCtx, lx, ly, cx, cy);
-        render();
-        lx = cx; ly = cy;
+        const r   = fc.getBoundingClientRect();
+        // getCoalescedEvents() returns ALL intermediate positions between frames.
+        // Without this, fast swipes produce sparse events → gaps in stroke.
+        const pts = e.getCoalescedEvents ? e.getCoalescedEvents() : [e];
+        for (const pt of pts) {
+          const cx = pt.clientX - r.left;
+          const cy = pt.clientY - r.top;
+          brushSegment(strkCtx, lx, ly, cx, cy);
+          lx = cx; ly = cy;
+        }
+        scheduleRender();
       });
 
-      function endStroke() {
+      function endStroke(e) {
         if (!drawing) return;
+        if (e && !e.isPrimary) return;
         drawing = false;
-
-        // Commit scratch canvas → mask at STROKE_ALPHA
         maskCtx.save();
         maskCtx.globalAlpha = STROKE_ALPHA;
         maskCtx.drawImage(strkC, 0, 0, dispW, dispH);
         maskCtx.restore();
-
-        // Clear scratch
         strkCtx.clearRect(0, 0, physW, physH);
-        render();
-
+        scheduleRender();
         confirmBtn.classList.remove('opacity-40', 'pointer-events-none');
         hintEl.textContent = '✓ Alan işaretlendi — devam edebilir veya tarayabilirsiniz';
       }
@@ -595,7 +601,7 @@ const UIModule = (() => {
       undoBtn.onclick = () => {
         if (!undoStack.length) return;
         maskCtx.putImageData(undoStack.pop(), 0, 0);
-        render();
+        scheduleRender();
         if (!undoStack.length) {
           confirmBtn.classList.add('opacity-40', 'pointer-events-none');
           hintEl.textContent = 'Parmağınızla metni üzerinde gezdirin';
@@ -607,7 +613,7 @@ const UIModule = (() => {
         undoStack = [];
         maskCtx.clearRect(0, 0, physW, physH);
         strkCtx.clearRect(0, 0, physW, physH);
-        render();
+        scheduleRender();
         confirmBtn.classList.add('opacity-40', 'pointer-events-none');
         hintEl.textContent = 'Parmağınızla metni üzerinde gezdirin';
       };
@@ -631,7 +637,6 @@ const UIModule = (() => {
         if (st) st.textContent = 'İŞLENİYOR';
         if (sd) { sd.classList.remove('bg-primary'); sd.classList.add('bg-yellow-400'); }
 
-        // Map CSS display-coords → source image pixel-coords
         const scaleX = srcCanvas.width  / iW;
         const scaleY = srcCanvas.height / iH;
         const cropX  = Math.round((bb.x - iX) * scaleX);
@@ -673,6 +678,13 @@ const UIModule = (() => {
 
         <!-- Capture Flash Overlay (white flash on shutter) -->
         <div id="capture-flash" class="absolute inset-0 z-[25] pointer-events-none bg-white opacity-0"></div>
+
+        <!-- Viewfinder blur strips — each panel covers one side outside the frame.
+             Positioned by JS in bindScanEvents after camera starts. -->
+        <div id="vf-blur-top"    class="absolute left-0 right-0 top-0 z-[2] pointer-events-none" style="backdrop-filter:blur(5px) brightness(0.42);-webkit-backdrop-filter:blur(5px) brightness(0.42);"></div>
+        <div id="vf-blur-bottom" class="absolute left-0 right-0 z-[2] pointer-events-none" style="backdrop-filter:blur(5px) brightness(0.42);-webkit-backdrop-filter:blur(5px) brightness(0.42);"></div>
+        <div id="vf-blur-left"   class="absolute left-0 z-[2] pointer-events-none" style="backdrop-filter:blur(5px) brightness(0.42);-webkit-backdrop-filter:blur(5px) brightness(0.42);"></div>
+        <div id="vf-blur-right"  class="absolute right-0 z-[2] pointer-events-none" style="backdrop-filter:blur(5px) brightness(0.42);-webkit-backdrop-filter:blur(5px) brightness(0.42);"></div>
 
         <!-- Fallback (no camera) -->
         <div id="camera-fallback" class="absolute inset-0 w-full h-full z-0 hidden items-center justify-center bg-background-dark">
@@ -797,25 +809,38 @@ const UIModule = (() => {
             <canvas id="brush-canvas" style="display:block; width:100%; height:100%;"></canvas>
           </div>
 
-          <!-- Footer: hint + undo / clear -->
-          <div class="flex-shrink-0 px-4 py-3 bg-black/95 border-t border-white/8">
-            <div class="flex items-center justify-between mb-1.5">
+          <!-- Footer: hint + brush-size slider + undo/clear -->
+          <div class="flex-shrink-0 px-4 py-3 bg-black/95 border-t border-white/8 space-y-2.5">
+
+            <!-- Hint -->
+            <div class="flex items-center justify-center gap-2">
+              <div class="w-2.5 h-2.5 rounded-full bg-violet-400 opacity-70 flex-shrink-0"></div>
+              <p id="brush-hint" class="text-white/55 text-xs">Parmağınızla metni üzerinde gezdirin</p>
+            </div>
+
+            <!-- Brush size slider -->
+            <div class="flex items-center gap-3">
+              <span class="material-symbols-outlined text-white/35" style="font-size:15px">brush</span>
+              <input type="range" id="brush-size-slider" min="8" max="50" value="22"
+                     class="brush-size-range flex-1">
+              <span id="brush-size-label" class="text-violet-400 font-bold text-[11px] w-5 text-right">22</span>
+            </div>
+
+            <!-- Undo / Clear -->
+            <div class="flex items-center justify-between">
               <button id="brush-undo-btn"
                       class="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-white/60 text-xs active:scale-90 transition-transform">
-                <span class="material-symbols-outlined text-[16px]">undo</span>
+                <span class="material-symbols-outlined text-[15px]">undo</span>
                 Geri Al
               </button>
-              <div class="flex items-center gap-2">
-                <div class="w-3 h-3 rounded-full bg-violet-400" style="opacity:0.75"></div>
-                <p id="brush-hint" class="text-white/55 text-xs">Parmağınızla metni üzerinde gezdirin</p>
-              </div>
+              <p class="text-white/20 text-[10px]">Küçük alan = hızlı OCR</p>
               <button id="brush-clear-btn"
                       class="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-white/60 text-xs active:scale-90 transition-transform">
-                <span class="material-symbols-outlined text-[16px]">ink_eraser</span>
+                <span class="material-symbols-outlined text-[15px]">ink_eraser</span>
                 Temizle
               </button>
             </div>
-            <p class="text-center text-white/22 text-[10px]">Küçük alan seçmek OCR'yi hızlandırır ve doğruluğu artırır</p>
+
           </div>
         </div>
 
@@ -834,8 +859,60 @@ const UIModule = (() => {
         video.classList.add('hidden');
         fallback.classList.remove('hidden');
         fallback.classList.add('flex');
+      } else {
+        // Position the 4 backdrop-filter blur strips around the viewfinder frame
+        requestAnimationFrame(() => {
+          const frame = document.getElementById('scan-frame');
+          if (!frame) return;
+          const fr = frame.getBoundingClientRect();
+          const vw = window.innerWidth;
+          const vh = window.innerHeight;
+          const top = document.getElementById('vf-blur-top');
+          const bot = document.getElementById('vf-blur-bottom');
+          const lft = document.getElementById('vf-blur-left');
+          const rgt = document.getElementById('vf-blur-right');
+          if (top) top.style.height    = Math.max(0, fr.top)  + 'px';
+          if (bot) { bot.style.top    = fr.bottom + 'px'; bot.style.height = Math.max(0, vh - fr.bottom) + 'px'; }
+          if (lft) { lft.style.top    = fr.top + 'px'; lft.style.height = (fr.bottom - fr.top) + 'px'; lft.style.width = Math.max(0, fr.left) + 'px'; }
+          if (rgt) { rgt.style.top    = fr.top + 'px'; rgt.style.height = (fr.bottom - fr.top) + 'px'; rgt.style.left = fr.right + 'px'; rgt.style.width = Math.max(0, vw - fr.right) + 'px'; }
+        });
       }
     });
+
+    // ── Pinch-to-zoom on camera ──────────────────────────────
+    (function () {
+      let prevDist = null;
+      let curZoom  = 1;
+      const page   = document.querySelector('#app > .page');
+      if (!page) return;
+
+      function touchDist(e) {
+        const [t1, t2] = e.touches;
+        return Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY);
+      }
+
+      page.addEventListener('touchmove', e => {
+        if (e.touches.length !== 2) { prevDist = null; return; }
+        e.preventDefault();
+        const dist = touchDist(e);
+        if (prevDist !== null) {
+          curZoom = Math.min(8, Math.max(1, curZoom * (dist / prevDist)));
+          const track = OCRModule.getVideoTrack();
+          if (track) {
+            const caps = track.getCapabilities ? track.getCapabilities() : {};
+            if (caps.zoom) {
+              track.applyConstraints({
+                advanced: [{ zoom: Math.min(caps.zoom.max, Math.max(caps.zoom.min, curZoom)) }]
+              }).catch(() => {});
+            }
+          }
+        }
+        prevDist = dist;
+      }, { passive: false });
+
+      page.addEventListener('touchend',   () => { prevDist = null; }, { passive: true });
+      page.addEventListener('touchcancel',() => { prevDist = null; }, { passive: true });
+    })();
 
     // ── Navigation ───────────────────────────────────────────
     document.getElementById('scan-back-btn')?.addEventListener('click', () => {

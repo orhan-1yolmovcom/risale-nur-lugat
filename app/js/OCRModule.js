@@ -249,6 +249,12 @@ const OCRModule = (() => {
     return false;
   }
 
+  // ── Get active video track (used for pinch-to-zoom) ───────
+  function getVideoTrack() {
+    if (!videoStream) return null;
+    return videoStream.getVideoTracks()[0] || null;
+  }
+
   // ── Terminate worker (clean up) ──────────────────────────
   async function terminateWorker() {
     if (worker) { await worker.terminate(); worker = null; }
@@ -260,6 +266,6 @@ const OCRModule = (() => {
     startCamera, stopCamera,
     captureFullFrame, captureFrame, cropForOCR,
     performOCR, performOCRFromImage,
-    tokenize, toggleFlash, terminateWorker,
+    tokenize, toggleFlash, getVideoTrack, terminateWorker,
   };
 })();
