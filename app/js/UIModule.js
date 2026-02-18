@@ -648,6 +648,7 @@ const UIModule = (() => {
       }
       const { c: maskC,  cx: maskCtx  } = makeOffscreen(true);
       const { c: strkC,  cx: strkCtx  } = makeOffscreen();
+      const { c: overC,  cx: overCtx  } = makeOffscreen();
 
       function buildMaskedOcrCanvas(cropX, cropY, cropW, cropH, scaleX, scaleY) {
         // 1) Crop original source region in source-pixel space
@@ -771,14 +772,20 @@ const UIModule = (() => {
 
         // Outside selected brush area becomes black (visual focus mode)
         if (undoStack.length > 0 || drawing) {
-          ctx.save();
-          ctx.fillStyle = 'rgba(0, 0, 0, 0.97)';
-          ctx.fillRect(0, 0, dispW, dispH);
-          ctx.globalCompositeOperation = 'destination-out';
-          ctx.globalAlpha = 1;
-          ctx.drawImage(maskC, 0, 0, dispW, dispH);
-          ctx.drawImage(strkC, 0, 0, dispW, dispH);
-          ctx.restore();
+          // Build overlay in a separate buffer so we never modify main ctx pixels.
+          // overC = solid black everywhere EXCEPT where brush strokes are (holes).
+          overCtx.globalCompositeOperation = 'source-over';
+          overCtx.clearRect(0, 0, dispW, dispH);
+          overCtx.fillStyle = '#000';
+          overCtx.fillRect(0, 0, dispW, dispH);
+
+          overCtx.globalCompositeOperation = 'destination-out';
+          overCtx.drawImage(maskC, 0, 0, dispW, dispH);  // committed strokes
+          overCtx.drawImage(strkC, 0, 0, dispW, dispH);  // in-progress stroke
+          overCtx.globalCompositeOperation = 'source-over'; // always reset
+
+          // Draw on top of the already-rendered image. Holes → image visible.
+          ctx.drawImage(overC, 0, 0, dispW, dispH);
         }
 
         // Single-line constraint visual guide
