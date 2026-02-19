@@ -6,3 +6,8 @@ build
 
 # Local secrets — never commit
 app/js/config.js
+
+# Capacitor iOS build artifacts (keep ios/ folder itself)
+ios/App/Pods/
+ios/App/App.xcworkspace/xcuserdata/
+ios/.DS_Store

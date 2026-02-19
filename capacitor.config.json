@@ -1,0 +1,21 @@
+{
+  "appId": "com.yolmov.risalenur",
+  "appName": "Risale-i Nur Lûgat",
+  "webDir": "app",
+  "ios": {
+    "contentInset": "always",
+    "allowsLinkPreview": false,
+    "scrollEnabled": false,
+    "limitsNavigationsToAppBoundDomains": true
+  },
+  "plugins": {
+    "Camera": {
+      "iosScheme": "ionic"
+    }
+  },
+  "server": {
+    "allowNavigation": [
+      "api.openai.com"
+    ]
+  }
+}
