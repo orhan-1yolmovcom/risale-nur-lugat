@@ -9,6 +9,11 @@
     "limitsNavigationsToAppBoundDomains": true
   },
   "plugins": {
+    "StatusBar": {
+      "style": "DARK",
+      "backgroundColor": "#181012",
+      "overlaysWebView": true
+    },
     "Camera": {
       "iosScheme": "ionic"
     }
