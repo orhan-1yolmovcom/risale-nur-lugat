@@ -60,14 +60,16 @@
 
   <!-- Word Meaning Modal (Global Overlay) -->
   <div id="word-modal-overlay" class="fixed inset-0 z-[100] hidden items-end justify-center bg-black/60 backdrop-blur-sm transition-all">
-    <div id="word-modal" class="w-full max-w-md mx-auto rounded-t-[2rem] overflow-hidden transform translate-y-full transition-transform duration-300 ease-out">
-      <div class="glass-panel-solid p-6 pb-10">
+    <div id="word-modal" class="w-full max-w-md mx-auto rounded-t-[2rem] overflow-hidden transform translate-y-full transition-transform duration-300 ease-out flex flex-col"
+         style="max-height:88dvh;">
+      <div class="glass-panel-solid flex flex-col overflow-hidden"
+           style="padding: 20px 24px 0 24px; padding-bottom: max(env(safe-area-inset-bottom, 0px), 24px);">
         <!-- Modal Handle -->
-        <div class="flex justify-center mb-5">
+        <div class="flex justify-center mb-4 flex-shrink-0">
           <div class="w-10 h-1 rounded-full bg-white/20"></div>
         </div>
-        <!-- Modal Content -->
-        <div id="word-modal-content">
+        <!-- Modal Content — scrollable -->
+        <div id="word-modal-content" class="overflow-y-auto flex-1" style="-webkit-overflow-scrolling:touch;">
           <!-- Filled dynamically -->
         </div>
       </div>
