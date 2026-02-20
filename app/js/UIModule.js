@@ -156,7 +156,8 @@ const UIModule = (() => {
       { id: 'settings', icon: 'settings', label: 'Ayarlar' },
     ];
     return `
-      <nav class="fixed bottom-0 left-0 right-0 z-50 glass-panel border-t border-white/5 pb-5 pt-3 px-4">
+      <nav class="fixed bottom-0 left-0 right-0 z-50 glass-panel border-t border-white/5 pt-3 px-4"
+           style="padding-bottom:max(env(safe-area-inset-bottom, 0px), 20px);">
         <div class="flex justify-between items-end max-w-md mx-auto">
           ${items.map(it => `
             <button data-nav="${it.id}" class="flex flex-col items-center gap-1 group min-w-[50px] transition-colors ${active === it.id ? 'text-primary' : 'text-white/40 hover:text-white/70'}">
@@ -1070,7 +1071,7 @@ const UIModule = (() => {
   // ============================================================
   function renderScan() {
     appRoot().innerHTML = `
-      <div class="page relative flex flex-col h-screen w-full bg-black overflow-hidden">
+      <div class="page relative flex flex-col w-full bg-black overflow-hidden" style="height:100dvh;">
 
         <!-- Camera Video -->
         <video id="camera-video" class="absolute inset-0 w-full h-full object-cover z-0" playsinline autoplay muted></video>
@@ -1115,7 +1116,7 @@ const UIModule = (() => {
              Bottom = action bar, in normal flow (NOT absolute)
         -->
         <div class="absolute inset-0 z-10 flex flex-col"
-             style="padding-top:calc(max(env(safe-area-inset-top, 0px), 14px) + 56px);">
+             style="padding-top:calc(max(env(safe-area-inset-top, 0px), 14px) + 56px); padding-bottom:env(safe-area-inset-bottom, 34px);">
 
           <!-- Viewfinder area: grows to fill available space, centers content -->
           <div class="flex-1 flex flex-col justify-center items-center">
@@ -1153,8 +1154,7 @@ const UIModule = (() => {
           </div>
 
           <!-- Bottom Action Bar: styled like nav bar -->
-          <div class="w-full px-4 pt-3 flex items-center justify-between glass-panel border-t border-white/5"
-               style="padding-bottom:max(env(safe-area-inset-bottom, 34px), 34px);">
+          <div class="w-full px-4 pt-3 pb-3 flex items-center justify-between glass-panel border-t border-white/5">
 
             <!-- Gallery -->
             <div class="flex flex-col items-center gap-1.5">
@@ -1192,7 +1192,7 @@ const UIModule = (() => {
 
           <!-- Header -->
           <div class="flex-shrink-0 flex items-center justify-between px-3 bg-black/95 border-b border-white/10"
-               style="padding-top: max(env(safe-area-inset-top, 0px), 44px); padding-bottom: 12px;">
+               style="padding-top: max(env(safe-area-inset-top, 0px), 50px); padding-bottom: 12px;">
             <button id="crop-cancel-btn"
                     class="flex items-center gap-1 px-3 py-2 rounded-xl bg-white/6 border border-white/10 text-white/65 text-sm active:scale-90 transition-transform">
               <span class="material-symbols-outlined text-[18px]">close</span>
@@ -1219,7 +1219,8 @@ const UIModule = (() => {
           </div>
 
           <!-- Footer: hint + brush-size slider + undo/clear -->
-          <div class="flex-shrink-0 px-4 py-3 bg-black/95 border-t border-white/8 space-y-2.5">
+          <div class="flex-shrink-0 px-4 pt-3 bg-black/95 border-t border-white/8 space-y-2.5"
+               style="padding-bottom:max(env(safe-area-inset-bottom, 0px), 20px);">
 
             <!-- Hint -->
             <div class="flex items-center justify-center gap-2">
