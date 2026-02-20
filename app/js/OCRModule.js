@@ -5,8 +5,8 @@ const OCRModule = (() => {
   let videoEl = null;
   let worker = null;
 
-  // Runtime fallback key (used if APP_CONFIG is missing/placeholder)
-  const FALLBACK_OPENAI_API_KEY = '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';
+  // API key artık server-side /api/ocr üzerinde tutulur (Vercel env: OPENAI_API_KEY).
+  // Client kodda API key saklanmaz.
 
   // ── Progress UI helpers ──────────────────────────────────
   function _showOverlay() {
@@ -26,20 +26,6 @@ const OCRModule = (() => {
     if (pctEl)  pctEl.textContent = Math.round(pct) + '%';
     if (status && statEl) statEl.textContent = status;
     if (detail && detEl)  detEl.textContent  = detail;
-  }
-
-  function _getOpenAIApiKey() {
-    const cfgKey = (window.APP_CONFIG && window.APP_CONFIG.OPENAI_API_KEY
-      ? String(window.APP_CONFIG.OPENAI_API_KEY).trim()
-      : '');
-    if (cfgKey && cfgKey !== 'YOUR_OPENAI_API_KEY_HERE') return cfgKey;
-    return FALLBACK_OPENAI_API_KEY;
-  }
-
-  function _maskKey(key) {
-    if (!key) return '(empty)';
-    const tail = key.slice(-6);
-    return `sk-proj-***${tail}`;
   }
 
   // ── Tesseract worker lifecycle ────────────────────────────
@@ -273,16 +259,11 @@ const OCRModule = (() => {
    */
   async function performOCRWithGPT(canvas) {
     _showOverlay();
-    _setProgress(5, 'GPT-4o-mini bağlanıyor...', 'OpenAI API hazırlanıyor');
+    _setProgress(5, 'GPT-4o-mini bağlanıyor...', 'Sunucu hazırlanıyor');
     console.info('[GPT-OCR] Başladı: görsel OCR akışı başlatılıyor');
 
     try {
       if (!canvas) throw new Error('OCR için görsel bulunamadı');
-      const apiKey = _getOpenAIApiKey();
-      if (!apiKey) {
-        throw new Error('OpenAI API key ayarlanmamış (config.js)');
-      }
-      console.info(`[GPT-OCR] API anahtarı bulundu: ${_maskKey(apiKey)}`);
 
       // ── Resize to ≤ 1024 px (reduces tokens & cost) ─────────
       const MAX = 1024;
@@ -299,61 +280,20 @@ const OCRModule = (() => {
       console.info(`[GPT-OCR] Görsel hazırlandı: ${canvas.width}x${canvas.height} → ${sw}x${sh}`);
 
       _setProgress(20, 'Görsel gönderiliyor...', `${sw}×${sh} px · JPEG`);
-      console.info('[GPT-OCR] Görsel gönderildi: OpenAI API çağrısı yapılıyor');
+      console.info('[GPT-OCR] Görsel gönderildi: /api/ocr proxy üzerinden');
       _setProgress(45, 'Görsel inceleniyor...', 'Model yanıtı bekleniyor');
 
-      // ── API request ──────────────────────────────────────────
-      const res = await fetch('https://api.openai.com/v1/chat/completions', {
+      // ── Proxy request (server-side, CORS-free) ───────────────
+      const res = await fetch('/api/ocr', {
         method: 'POST',
-        headers: {
-          'Content-Type':  'application/json',
-          'Authorization': `Bearer ${apiKey}`,
-        },
-        body: JSON.stringify({
-          model:       'gpt-4o-mini',
-          temperature: 0,
-          max_tokens:  1500,
-          messages: [
-            {
-              role: 'system',
-              content:
-                'Sen gelişmiş bir OCR Asistanısın.\n' +
-                'Görevin yalnızca görseldeki metni okumak ve JSON formatında döndürmektir.\n' +
-                'Kurallar:\n' +
-                '1. Görseldeki tüm metni en yüksek doğrulukla çıkart.\n' +
-                '2. Harf düzeltme, yorum, tahmin veya açıklama yapma.\n' +
-                '3. Sadece gördüğün kelimeleri ham şekilde çıkar.\n' +
-                '4. Osmanlıca/Türkçe ayrımı yapma, gördüğün gibi yaz.\n' +
-                '5. Metni mümkün olduğunca satır bazlı çıkar.\n' +
-                '6. SADECE JSON döndür — başka hiçbir şey yazma.',
-            },
-            {
-              role: 'user',
-              content: [
-                {
-                  type: 'text',
-                  text:
-                    'Aşağıdaki görseldeki metni oku. YALNIZCA şu JSON formatında yanıt ver — başka hiçbir şey yazma:\n\n' +
-                    '{"full_text":"OCR ile elde edilen tam metin","lines":[["kelime1","kelime2"],["kelime3","kelime4"]]}\n\n' +
-                    '- Kelimeleri normalize etme.\n' +
-                    '- Harf düzeltme yapma.\n' +
-                    '- Osmanlıca-Türkçe ayırma.\n' +
-                    '- Sadece gördüğünü aynen çıkar.',
-                },
-                {
-                  type: 'image_url',
-                  image_url: { url: `data:image/jpeg;base64,${base64}`, detail: 'auto' },
-                },
-              ],
-            },
-          ],
-        }),
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ base64, width: sw, height: sh }),
       });
       console.info(`[GPT-OCR] API döndü: HTTP ${res.status}`);
 
       if (!res.ok) {
         const errBody = await res.json().catch(() => ({}));
-        throw new Error(`OpenAI ${res.status}: ${errBody?.error?.message || 'bilinmeyen hata'}`);
+        throw new Error(`OCR proxy ${res.status}: ${errBody?.error || 'bilinmeyen hata'}`);
       }
 
       const data  = await res.json();
@@ -501,18 +441,13 @@ const OCRModule = (() => {
 
   // ── Real OCR: canvas (GPT-first, Tesseract fallback) ──────
   async function performOCR(canvas) {
-    // Try GPT-4o-mini first if API key is configured
-    const apiKey = _getOpenAIApiKey();
-    if (apiKey) {
-      try {
-        console.info('[OCRModule] OCR yolu: GPT-4o-mini (öncelikli)');
-        return await performOCRWithGPT(canvas);
-      } catch (err) {
-        console.warn('[OCRModule] GPT failed, falling back to Tesseract:', err.message);
-        // fall through to Tesseract
-      }
-    } else {
-      console.warn('[OCRModule] OpenAI API key yok, doğrudan Tesseract kullanılacak.');
+    // Try GPT-4o-mini first (via /api/ocr proxy, no API key needed client-side)
+    try {
+      console.info('[OCRModule] OCR yolu: GPT-4o-mini (server proxy)');
+      return await performOCRWithGPT(canvas);
+    } catch (err) {
+      console.warn('[OCRModule] GPT failed, falling back to Tesseract:', err.message);
+      // fall through to Tesseract
     }
 
     // ── Tesseract fallback ────────────────────────────────────
@@ -552,17 +487,12 @@ const OCRModule = (() => {
       return { text: 'Görsel yüklenirken hata oluştu.', tokens: [], lines: [] };
     }
 
-    // Try GPT-4o-mini first if key is configured
-    const apiKey = _getOpenAIApiKey();
-    if (apiKey) {
-      try {
-        console.info('[OCRModule] Görsel dosya OCR yolu: GPT-4o-mini (öncelikli)');
-        return await performOCRWithGPT(canvas);
-      } catch (err) {
-        console.warn('[OCRModule] GPT failed for image file, falling back to Tesseract:', err.message);
-      }
-    } else {
-      console.warn('[OCRModule] OpenAI API key yok, görsel dosyada doğrudan Tesseract kullanılacak.');
+    // Try GPT-4o-mini first (via /api/ocr proxy)
+    try {
+      console.info('[OCRModule] Görsel dosya OCR yolu: GPT-4o-mini (server proxy)');
+      return await performOCRWithGPT(canvas);
+    } catch (err) {
+      console.warn('[OCRModule] GPT failed for image file, falling back to Tesseract:', err.message);
     }
 
     // ── Tesseract fallback ────────────────────────────────────
