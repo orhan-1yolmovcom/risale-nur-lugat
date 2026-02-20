@@ -77,7 +77,8 @@
   </div>
 
   <!-- Toast Notification -->
-  <div id="toast" class="fixed top-6 left-1/2 -translate-x-1/2 z-[200] hidden">
+  <div id="toast" class="fixed left-1/2 -translate-x-1/2 z-[200] hidden"
+       style="top:max(env(safe-area-inset-top, 0px), 16px); margin-top: 8px;">
     <div class="glass-panel rounded-2xl px-5 py-3 flex items-center gap-3 shadow-lg">
       <span id="toast-icon" class="material-symbols-outlined text-primary text-xl"></span>
       <span id="toast-text" class="text-sm font-medium text-white/90"></span>
