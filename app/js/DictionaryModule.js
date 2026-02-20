@@ -223,21 +223,37 @@ const DictionaryModule = (() => {
 
   /**
    * Normalize a word for lookup: lowercase, strip punctuation, trim
+   *
+   * Handles all OCR artefacts:
+   *  • Kıvrımlı çift tırnaklar "..." (U+201C/D) → kaldırılır  ← BUG FIX
+   *  • Kıvrımlı tek tırnaklar '...' (U+2018/9) → düz ' → kaldırılır
+   *  • Osmanlıca transliterasyon: â,î,û,ê,ô → base vowel
+   *  • NFKD: ş→s, ç→c, ğ→g, combining diacritics → stripped
+   *  • Tüm noktalama ve tire türleri → kaldırılır
    */
   function normalize(word) {
     if (!word) return '';
     return word
       .toLowerCase()
-      .replace(/[âáàä]/g, 'a')
-      .replace(/[êéèë]/g, 'e')
-      .replace(/[îíìï]/g, 'i')
-      .replace(/[ûúùü]/g, 'u')
-      .replace(/[ôóòö]/g, 'o')
-      .replace(/[ı]/g, 'i')
+      // ── Tüm kıvrımlı/akıllı tek tırnak → düz apostrof U+0027 ────────────
+      // ' U+2018  ' U+2019  ‚ U+201A  ‛ U+201B  ʼ U+02BC  ʻ U+02B9  ` U+0060  ´ U+00B4
+      .replace(/[\u2018\u2019\u201A\u201B\u02BC\u02B9\u0060\u00B4]/g, "'")
+      // ── Tüm kıvrımlı çift tırnak → kaldır (OCR artefaktı: "Mânevi" → Mânevi) ──
+      // " U+201C  " U+201D  „ U+201E  ‟ U+201F  « U+00AB  » U+00BB
+      .replace(/[\u201C\u201D\u201E\u201F\u00AB\u00BB]/g, '')
+      // ── Osmanlıca/Arapça Latin transliterasyon ünlüleri ──────────────────
+      .replace(/[\u00E2\u00E1\u00E0\u00E4\u0101]/g, 'a')  // â á à ä ā
+      .replace(/[\u00EA\u00E9\u00E8\u00EB\u0113]/g, 'e')  // ê é è ë ē
+      .replace(/[\u00EE\u00ED\u00EC\u00EF\u012B]/g, 'i')  // î í ì ï ī
+      .replace(/[\u00FB\u00FA\u00F9\u00FC\u016B]/g, 'u')  // û ú ù ü ū
+      .replace(/[\u00F4\u00F3\u00F2\u00F6\u014D]/g, 'o')  // ô ó ò ö ō
+      .replace(/\u0131/g, 'i')                             // ı → i
+      // ── NFKD: ş→s, ç→c, ğ→g + tüm birleşik diyakritikleri kaldır ───────
       .normalize('NFKD')
       .replace(/[\u0300-\u036f]/g, '')
-      .replace(/[’`´]/g, "'")
-      .replace(/[.,;:!?"'()\[\]{}<>…«»–—\-]/g, '')
+      // ── Kalan tüm noktalama, tire ve ayraçları kaldır ────────────────────
+      // Dahil: . , ; : ! ? " ' ( ) [ ] { } < > … - – — ‒ ‑
+      .replace(/[.,;:!?"'()\[\]{}<>\u2026\u2013\u2014\u2015\u2010\u2011\u002D]/g, '')
       .replace(/\s+/g, '')
       .trim();
   }
@@ -361,14 +377,16 @@ const DictionaryModule = (() => {
         const w = item.nw || item.ns;
         if (!w) continue;
         if (first && w[0] !== first) continue;
-        if (Math.abs(w.length - normalized.length) > 2) continue;
+        // Uzun kelimelerde (≥7 harf) 2 harf farkına izin ver → daha iyi öneri
+        const _maxLev = normalized.length >= 7 ? 2 : 1;
+        if (Math.abs(w.length - normalized.length) > _maxLev + 1) continue;
 
         scanned++;
-        if (levenshtein(w, normalized) <= 1) {
+        if (levenshtein(w, normalized) <= _maxLev) {
           fuzzy.push(item.entry);
           if (fuzzy.length >= 5) break;
         }
-        if (scanned >= 600) break;
+        if (scanned >= 800) break;
       }
       suggestions = suggestions.concat(fuzzy);
     }
@@ -390,12 +408,35 @@ const DictionaryModule = (() => {
    * Returns same shape as lookup().
    */
   function smartLookup(rawWord) {
+    // ── Ön temizleme: OCR'ın başa/sona eklediği tırnak ve noktalama ──────────
+    // "Mânevi" → Mânevi   |   'kelime' → kelime   |   ...söz... → söz
+    const preCleaned = rawWord
+      .replace(/^[\s\u201C\u201D\u201E\u2018\u2019\u00AB\u00BB"'.,;:!?()\[\]{}<>\u2026\u2013\u2014\u002D]+/, '')
+      .replace(/[\s\u201C\u201D\u201E\u2018\u2019\u00AB\u00BB"'.,;:!?()\[\]{}<>\u2026\u2013\u2014\u002D]+$/, '');
+    const word = preCleaned.length >= 1 ? preCleaned : rawWord;
+
     // 1) Normal lookup (exact + fuzzy)
-    const direct = lookup(rawWord);
+    const direct = lookup(word);
     if (direct.found) return direct;
 
-    const normalized = normalize(rawWord);
+    const normalized = normalize(word);
     if (!normalized || normalized.length < 2) return direct;
+
+    // 1.5) Ayraç bölme — tek tırnak veya tire öncesi tabanı ara ─────────────
+    // hakîkat'ten → hakîkat  |  feyz'in → feyz  |  rıza-yı → rıza  |  şefkat—i → şefkat
+    // Not: şu'arâ ayraç idx=2 < 3 → atlanır; tam normalize ile zaten bulunur
+    const _sepIdx = word.search(/[\u0027\u2018\u2019\u02BC\u002D\u2013\u2014]/);
+    if (_sepIdx >= 3) {
+      const _base = word.slice(0, _sepIdx);
+      const _baseResult = lookup(_base);
+      if (_baseResult.found) return _baseResult;
+      // Taban üzerinde Türkçe ek soyma
+      const _baseNorm = normalize(_base);
+      for (const _stem of _turkishStems(_baseNorm)) {
+        const _arr = exactIndex.get(_stem);
+        if (_arr && _arr.length > 0) return { found: true, entry: _arr[0], entries: _arr };
+      }
+    }
 
     // 2) Turkish suffix-stripped stems
     const stems = _turkishStems(normalized);
