@@ -1427,7 +1427,7 @@ const UIModule = (() => {
 
         <div class="relative z-10 flex flex-col flex-1 w-full pb-24">
           <!-- Header -->
-          <header class="sticky top-0 z-50 flex items-center justify-between px-4 py-4 backdrop-blur-md bg-black/20 border-b border-white/5">
+          <header class="sticky top-0 z-50 flex items-center justify-between px-4 pb-4 backdrop-blur-md bg-surface-dark/90 border-b border-white/5" style="padding-top:max(env(safe-area-inset-top, 0px), 14px);">
             <button id="analysis-back-btn" class="p-2 rounded-full hover:bg-white/10 transition-colors text-white">
               <span class="material-symbols-outlined text-[28px]">arrow_back</span>
             </button>
@@ -1596,7 +1596,8 @@ const UIModule = (() => {
 
         <div class="relative z-10 flex flex-col flex-1 w-full pb-24">
           <!-- Header -->
-          <header class="sticky top-0 z-50 flex items-center gap-3 px-4 py-4 backdrop-blur-md bg-black/20 border-b border-white/5">
+          <header class="sticky top-0 z-50 flex items-center gap-3 px-4 pb-4 backdrop-blur-md bg-surface-dark/90 border-b border-white/5"
+                  style="padding-top:max(env(safe-area-inset-top, 0px), 14px);">
             <button id="search-back-btn" class="p-2 rounded-full hover:bg-white/10 transition-colors text-white">
               <span class="material-symbols-outlined text-[28px]">arrow_back</span>
             </button>
@@ -1693,7 +1694,7 @@ const UIModule = (() => {
 
         <div class="relative z-10 flex flex-col flex-1 w-full pb-24">
           <!-- Header -->
-          <header class="sticky top-0 z-50 flex items-center justify-between px-4 py-4 backdrop-blur-md bg-black/20 border-b border-white/5">
+          <header class="sticky top-0 z-50 flex items-center justify-between px-4 pb-4 backdrop-blur-md bg-surface-dark/90 border-b border-white/5" style="padding-top:max(env(safe-area-inset-top, 0px), 14px);">
             <button id="fav-back-btn" class="p-2 rounded-full hover:bg-white/10 transition-colors text-white">
               <span class="material-symbols-outlined text-[28px]">arrow_back</span>
             </button>
@@ -1759,7 +1760,7 @@ const UIModule = (() => {
         <div class="fixed top-[-10%] right-[-10%] w-[400px] h-[400px] bg-primary/10 rounded-full blur-[80px] opacity-30 pointer-events-none"></div>
 
         <div class="relative z-10 flex flex-col flex-1 w-full pb-24">
-          <header class="sticky top-0 z-50 flex items-center justify-between px-4 py-4 backdrop-blur-md bg-black/20 border-b border-white/5">
+          <header class="sticky top-0 z-50 flex items-center justify-between px-4 pb-4 backdrop-blur-md bg-surface-dark/90 border-b border-white/5" style="padding-top:max(env(safe-area-inset-top, 0px), 14px);">
             <button id="history-back-btn" class="p-2 rounded-full hover:bg-white/10 transition-colors text-white">
               <span class="material-symbols-outlined text-[28px]">arrow_back</span>
             </button>
@@ -1821,7 +1822,7 @@ const UIModule = (() => {
 
         <div class="relative z-10 flex flex-col flex-1 w-full pb-24">
           <!-- Header -->
-          <header class="sticky top-0 z-50 flex items-center justify-between px-4 py-4 backdrop-blur-md bg-black/20 border-b border-white/5">
+          <header class="sticky top-0 z-50 flex items-center justify-between px-4 pb-4 backdrop-blur-md bg-surface-dark/90 border-b border-white/5" style="padding-top:max(env(safe-area-inset-top, 0px), 14px);">
             <button id="settings-back-btn" class="p-2 rounded-full hover:bg-white/10 transition-colors text-white">
               <span class="material-symbols-outlined text-[28px]">arrow_back</span>
             </button>

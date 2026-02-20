@@ -49,11 +49,14 @@ body {
 
 /* ---------- Input Glass ---------- */
 .input-glass {
-  background: rgba(0, 0, 0, 0.25);
+  background: rgba(30, 15, 18, 0.85);
+  background-color: rgba(30, 15, 18, 0.85);
   border: 1px solid rgba(255, 255, 255, 0.06);
   color: rgba(255, 255, 255, 0.95);
   caret-color: #ffffff;
   transition: all 0.3s ease;
+  -webkit-appearance: none;
+  appearance: none;
 }
 .input-glass::placeholder {
   color: rgba(255, 255, 255, 0.45);
@@ -68,8 +71,8 @@ body {
 .input-glass:-webkit-autofill,
 .input-glass:-webkit-autofill:hover,
 .input-glass:-webkit-autofill:focus {
-  -webkit-text-fill-color: rgba(255, 255, 255, 0.95);
-  -webkit-box-shadow: 0 0 0 1000px rgba(0, 0, 0, 0.35) inset;
+  -webkit-text-fill-color: rgba(255, 255, 255, 0.95) !important;
+  -webkit-box-shadow: 0 0 0 1000px rgba(30, 15, 18, 1) inset !important;
   transition: background-color 9999s ease-in-out 0s;
 }
 
