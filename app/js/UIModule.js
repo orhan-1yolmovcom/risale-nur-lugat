@@ -1154,7 +1154,7 @@ const UIModule = (() => {
 
           <!-- Bottom Action Bar: styled like nav bar -->
           <div class="w-full px-4 pt-3 flex items-center justify-between glass-panel border-t border-white/5"
-               style="padding-bottom:max(env(safe-area-inset-bottom, 20px), 20px);">
+               style="padding-bottom:max(env(safe-area-inset-bottom, 34px), 34px);">
 
             <!-- Gallery -->
             <div class="flex flex-col items-center gap-1.5">

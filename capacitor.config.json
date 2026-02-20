@@ -3,19 +3,16 @@
   "appName": "Risale-i Nur Lûgat",
   "webDir": "app",
   "ios": {
-    "contentInset": "always",
     "allowsLinkPreview": false,
     "scrollEnabled": false,
-    "limitsNavigationsToAppBoundDomains": true
+    "limitsNavigationsToAppBoundDomains": true,
+    "backgroundColor": "#181012"
   },
   "plugins": {
     "StatusBar": {
-      "style": "DARK",
+      "style": "LIGHT",
       "backgroundColor": "#181012",
-      "overlaysWebView": true
-    },
-    "Camera": {
-      "iosScheme": "ionic"
+      "overlaysWebView": false
     }
   },
   "server": {
