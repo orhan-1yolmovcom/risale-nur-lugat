@@ -544,6 +544,49 @@ const OCRModule = (() => {
     return false;
   }
 
+  /**
+   * Run Tesseract on the canvas and return an array of word objects with
+   * pixel-level bounding boxes in source-canvas coordinates.
+   * Used by Live Text overlay to position tappable word chips.
+   *
+   * @param {HTMLCanvasElement} canvas
+   * @returns {Promise<Array<{text:string, bbox:{x0,y0,x1,y1}, confidence:number}>>}
+   */
+  async function recognizeWords(canvas) {
+    // Downscale for speed — Tesseract is slower on large images
+    const MAX = 960;
+    const origW = canvas.width;
+    const origH = canvas.height;
+    const scale = (origW > MAX || origH > MAX)
+      ? MAX / Math.max(origW, origH)
+      : 1;
+    const sw = Math.round(origW * scale);
+    const sh = Math.round(origH * scale);
+
+    const tmp = document.createElement('canvas');
+    tmp.width = sw; tmp.height = sh;
+    tmp.getContext('2d').drawImage(canvas, 0, 0, sw, sh);
+    _preprocessCanvas(tmp.getContext('2d'), sw, sh); // greyscale+contrast boost
+
+    const blob = await new Promise(r => tmp.toBlob(r, 'image/png'));
+    const w    = await _getWorker();
+    const { data } = await w.recognize(blob);
+
+    return (data.words || [])
+      .filter(wd => wd.text && wd.text.trim().length > 0 && wd.confidence > 15)
+      .map(wd => ({
+        text: wd.text.trim().replace(/[.,;:!?"'()\[\]{}«»–—\-]/g, '').trim(),
+        bbox: {
+          x0: Math.round(wd.bbox.x0 / scale),
+          y0: Math.round(wd.bbox.y0 / scale),
+          x1: Math.round(wd.bbox.x1 / scale),
+          y1: Math.round(wd.bbox.y1 / scale),
+        },
+        confidence: Math.round(wd.confidence),
+      }))
+      .filter(wd => wd.text.length > 0);
+  }
+
   // ── Get active video track (used for pinch-to-zoom) ───────
   function getVideoTrack() {
     if (!videoStream) return null;
@@ -561,6 +604,7 @@ const OCRModule = (() => {
     startCamera, stopCamera,
     captureFullFrame, captureFrame, cropForOCR,
     performOCR, performOCRWithGPT, performOCRFromImage,
+    recognizeWords,
     tokenize, toggleFlash, getVideoTrack, terminateWorker,
   };
 })();

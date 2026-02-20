@@ -642,6 +642,114 @@ const UIModule = (() => {
     if (panel) panel.style.transform = 'translateY(100%)';
   }
 
+  // ============================================================
+  //  LIVE TEXT VIEW  (Google Translate tarzı kelime overlay'i)
+  //  Fotoğraf çekildikten sonra Tesseract ile her kelimeyi bbox'lar,
+  //  kullanıcı doğrudan kelimeye dokunarak anlam bakabilir.
+  // ============================================================
+  async function _showLiveTextView(srcCanvas) {
+    const view      = document.getElementById('live-text-view');
+    const imgEl     = document.getElementById('ltv-image');
+    const wordsCont = document.getElementById('ltv-words');
+    const loadingEl = document.getElementById('ltv-loading');
+    const loadingTxt= document.getElementById('ltv-loading-text');
+    const brushBtn  = document.getElementById('ltv-brush-btn');
+    const cancelBtn = document.getElementById('ltv-cancel-btn');
+    if (!view) { _showBrushView(srcCanvas); return; }
+
+    // ── Reset & show ─────────────────────────────────────────
+    wordsCont.innerHTML = '';
+    loadingEl.classList.remove('hidden');
+    if (loadingTxt) loadingTxt.textContent = 'Metin algılanıyor...';
+    view.classList.remove('hidden');
+    view.classList.add('flex');
+
+    // Draw photo into the <img> element
+    imgEl.src = srcCanvas.toDataURL('image/jpeg', 0.92);
+
+    // ── Brush mode fallback ──────────────────────────────────
+    brushBtn.onclick = () => {
+      view.classList.add('hidden');
+      view.classList.remove('flex');
+      _showBrushView(srcCanvas);
+    };
+    cancelBtn.onclick = () => {
+      view.classList.add('hidden');
+      view.classList.remove('flex');
+    };
+
+    // ── Run Tesseract word detection ─────────────────────────
+    let words = [];
+    try {
+      words = await OCRModule.recognizeWords(srcCanvas);
+    } catch (err) {
+      console.warn('[LiveText] recognizeWords failed:', err);
+    }
+
+    loadingEl.classList.add('hidden');
+
+    if (!words || words.length === 0) {
+      showToast('Metin algılanamadı. Brush modunu deneyin.', 'brush');
+      return;
+    }
+
+    // ── Coordinate mapping: source canvas → displayed img ────
+    // Wait for <img> natural size to be available, then compute letterbox.
+    await new Promise(r => {
+      if (imgEl.complete && imgEl.naturalWidth > 0) { r(); return; }
+      imgEl.onload = r;
+      setTimeout(r, 800); // fallback timeout
+    });
+
+    const contEl   = document.getElementById('ltv-image-container');
+    const contRect = contEl.getBoundingClientRect();
+    const cW       = contRect.width;
+    const cH       = contRect.height;
+
+    // object-fit: contain letterbox calculation
+    const imgAspect  = srcCanvas.width / srcCanvas.height;
+    const contAspect = cW / cH;
+    let iW, iH, iX, iY;
+    if (imgAspect > contAspect) { iW = cW;     iH = cW / imgAspect; }
+    else                        { iH = cH;     iW = cH * imgAspect; }
+    iX = (cW - iW) / 2;
+    iY = (cH - iH) / 2;
+
+    // ── Render word chips ─────────────────────────────────────
+    words.forEach(wd => {
+      if (!wd.text || wd.text.length < 1) return;
+
+      // Map source-pixel bbox to display-pixel position
+      const x = iX + (wd.bbox.x0 / srcCanvas.width)  * iW;
+      const y = iY + (wd.bbox.y0 / srcCanvas.height) * iH;
+      const w = (wd.bbox.x1 - wd.bbox.x0) / srcCanvas.width  * iW;
+      const h = (wd.bbox.y1 - wd.bbox.y0) / srcCanvas.height * iH;
+
+      // Skip very tiny boxes (noise)
+      if (w < 8 || h < 8) return;
+
+      const chip = document.createElement('div');
+      chip.className = 'word-chip';
+      chip.setAttribute('data-word', wd.text);
+      chip.style.left   = `${x}px`;
+      chip.style.top    = `${y}px`;
+      chip.style.width  = `${w}px`;
+      chip.style.height = `${h}px`;
+
+      chip.addEventListener('click', () => {
+        // Deactivate previous selection
+        wordsCont.querySelectorAll('.word-chip.active').forEach(c => c.classList.remove('active'));
+        chip.classList.add('active');
+        lookupAndShowWord(wd.text);
+      });
+
+      wordsCont.appendChild(chip);
+    });
+
+    // Enable pointer events on words container
+    wordsCont.style.pointerEvents = 'auto';
+  }
+
   /**
    * Opens the brush-selection overlay with srcCanvas as the frozen background.
    *
@@ -1257,6 +1365,54 @@ const UIModule = (() => {
         </div>
 
         <!-- ══════════════════════════════════════════════
+             LIVE TEXT VIEW — kelime overlay (z-31, açılır ilk)
+             Tesseract bbox'larından her kelime için dokunulabilir chip
+             ══════════════════════════════════════════════ -->
+        <div id="live-text-view" class="absolute inset-0 z-[31] hidden flex-col bg-black" style="animation:fadeIn 0.22s ease;">
+
+          <!-- Header -->
+          <div class="flex-shrink-0 flex items-center justify-between px-3 bg-black/95 border-b border-white/10"
+               style="padding-top:max(env(safe-area-inset-top, 0px), 50px); padding-bottom:12px;">
+            <button id="ltv-cancel-btn"
+                    class="flex items-center gap-1 px-3 py-2 rounded-xl bg-white/6 border border-white/10 text-white/65 text-sm active:scale-90 transition-transform">
+              <span class="material-symbols-outlined text-[18px]">close</span>
+              İptal
+            </button>
+            <div class="text-center">
+              <span class="text-white font-bold text-base block leading-tight">Metni Seç</span>
+              <span class="text-white/35 text-[10px]">Kelimeye dokun · anlam göster</span>
+            </div>
+            <button id="ltv-brush-btn"
+                    class="flex items-center gap-1 px-3 py-2 rounded-xl bg-white/8 border border-white/15 text-white/80 text-sm active:scale-90 transition-transform">
+              <span class="material-symbols-outlined text-[18px]">brush</span>
+              Brush
+            </button>
+          </div>
+
+          <!-- Image + word chip overlay -->
+          <div class="flex-1 relative overflow-hidden bg-black" id="ltv-image-container">
+            <img id="ltv-image" alt="" class="absolute inset-0 w-full h-full object-contain select-none" draggable="false" />
+            <!-- Tappable word chips rendered here by JS -->
+            <div id="ltv-words" class="absolute inset-0" style="pointer-events:none;"></div>
+            <!-- Loading state -->
+            <div id="ltv-loading" class="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-black/50 pointer-events-none">
+              <div class="spinner"></div>
+              <p id="ltv-loading-text" class="text-white/60 text-sm">Metin algılanıyor...</p>
+            </div>
+          </div>
+
+          <!-- Footer -->
+          <div class="flex-shrink-0 px-4 pt-3 bg-black/95 border-t border-white/8 flex items-center justify-between"
+               style="padding-bottom:max(env(safe-area-inset-bottom, 0px), 20px);">
+            <div class="flex items-center gap-2">
+              <div class="w-2.5 h-2.5 rounded-full bg-primary opacity-80"></div>
+              <p class="text-white/45 text-xs">Kelimeye dokunun</p>
+            </div>
+            <p class="text-white/20 text-[10px]">Brush: manuel seçim</p>
+          </div>
+        </div>
+
+        <!-- ══════════════════════════════════════════════
              BRUSH SELECTION VIEW (shown after shutter press)
              ══════════════════════════════════════════════ -->
         <div id="crop-select-view" class="absolute inset-0 z-[30] hidden flex-col bg-black" style="animation: fadeIn 0.18s ease;">
@@ -1459,8 +1615,8 @@ const UIModule = (() => {
         return;
       }
 
-      // 3. After flash settle, open brush-select view
-      setTimeout(() => _showBrushView(captured), 230);
+      // 3. After flash settle, open Live Text view (auto word detection)
+      setTimeout(() => _showLiveTextView(captured), 230);
     });
 
     // ── Gallery / file import ────────────────────────────────
@@ -1477,7 +1633,7 @@ const UIModule = (() => {
         c.width = bitmap.width;
         c.height = bitmap.height;
         c.getContext('2d').drawImage(bitmap, 0, 0);
-        _showBrushView(c);
+        _showLiveTextView(c);
       } catch {
         showToast('Görsel yüklenemedi.', 'error');
       }
