@@ -7,6 +7,11 @@
    * Simple client-side router
    */
   window.navigateTo = function (page) {
+    // Clean up keyboard-hide listener from previous page
+    if (typeof window._cleanupNavKeyboard === 'function') {
+      window._cleanupNavKeyboard();
+      window._cleanupNavKeyboard = null;
+    }
     if (page !== 'scan') OCRModule.stopCamera();
 
     switch (page) {

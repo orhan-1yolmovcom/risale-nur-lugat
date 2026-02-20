@@ -178,6 +178,33 @@ const UIModule = (() => {
         window.navigateTo(page);
       });
     });
+
+    // ── Hide bottom nav when keyboard is open (iOS klavye tacizi önlemi) ──
+    const nav = document.querySelector('nav[class*="fixed bottom-0"]');
+    if (!nav) return;
+
+    const vv = window.visualViewport;
+    if (!vv) return;
+
+    let _navHideTimer;
+    function _onViewportResize() {
+      clearTimeout(_navHideTimer);
+      // If viewport height is significantly less than window height → keyboard open
+      const keyboardOpen = vv.height < window.innerHeight * 0.75;
+      if (keyboardOpen) {
+        nav.style.transform = 'translateY(100%)';
+        nav.style.transition = 'transform 0.2s ease';
+      } else {
+        _navHideTimer = setTimeout(() => {
+          nav.style.transform = '';
+          nav.style.transition = 'transform 0.25s ease';
+        }, 80);
+      }
+    }
+
+    vv.addEventListener('resize', _onViewportResize);
+    // Clean up listener when navigating away
+    window._cleanupNavKeyboard = () => vv.removeEventListener('resize', _onViewportResize);
   }
 
   // ============================================================
