@@ -852,6 +852,17 @@ const UIModule = (() => {
 
           // Draw on top of the already-rendered image. Holes → image visible.
           ctx.drawImage(overC, 0, 0, dispW, dispH);
+
+          // Purple tint on the painted (selected) region — purely cosmetic.
+          // buildMaskedOcrCanvas is a separate pipeline; this never touches the API canvas.
+          overCtx.clearRect(0, 0, dispW, dispH);
+          overCtx.fillStyle = 'rgba(139, 92, 246, 0.22)';
+          overCtx.fillRect(0, 0, dispW, dispH);
+          overCtx.globalCompositeOperation = 'destination-in';
+          overCtx.drawImage(maskC, 0, 0, dispW, dispH);  // committed strokes
+          overCtx.drawImage(strkC, 0, 0, dispW, dispH);  // in-progress stroke
+          overCtx.globalCompositeOperation = 'source-over';
+          ctx.drawImage(overC, 0, 0, dispW, dispH);
         }
 
         // Single-line constraint visual guide
@@ -871,8 +882,6 @@ const UIModule = (() => {
           ctx.stroke();
           ctx.restore();
         }
-        // Keep selected region as original image; no purple fill overlay.
-        // (Mask is used only for cutting out non-selected area above.)
         ctx.restore();
 
         if (viewScale > 1.01) {
