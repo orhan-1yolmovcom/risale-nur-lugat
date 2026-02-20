@@ -1116,10 +1116,10 @@ const UIModule = (() => {
              Bottom = action bar, in normal flow (NOT absolute)
         -->
         <div class="absolute inset-0 z-10 flex flex-col"
-             style="padding-top:calc(max(env(safe-area-inset-top, 0px), 14px) + 56px); padding-bottom:env(safe-area-inset-bottom, 34px);">
+             style="padding-top:calc(max(env(safe-area-inset-top, 0px), 14px) + 56px);">
 
           <!-- Viewfinder area: grows to fill available space, centers content -->
-          <div class="flex-1 flex flex-col justify-center items-center">
+          <div class="flex-1 flex flex-col justify-center items-center" style="padding-bottom:110px;">
             <div id="scan-frame"
                  class="relative rounded-3xl"
                  style="width:82%; max-width:340px; aspect-ratio:3/4;
@@ -1153,8 +1153,9 @@ const UIModule = (() => {
             </div>
           </div>
 
-          <!-- Bottom Action Bar: styled like nav bar -->
-          <div class="w-full px-4 pt-3 pb-3 flex items-center justify-between glass-panel border-t border-white/5">
+          <!-- Bottom Action Bar: absolute bottom-0 so it's always pinned -->
+          <div class="absolute bottom-0 left-0 right-0 z-20 px-4 pt-3 flex items-center justify-between glass-panel border-t border-white/5"
+               style="padding-bottom:max(env(safe-area-inset-bottom, 0px), 34px);">
 
             <!-- Gallery -->
             <div class="flex flex-col items-center gap-1.5">
