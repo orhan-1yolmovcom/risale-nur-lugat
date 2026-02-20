@@ -1,5 +1,21 @@
 /* ===== Risale-i Nur Lûgat — Global Styles ===== */
 
+/* ---------- CSS Variables ---------- */
+:root {
+  --rnl-font-size: 18px;
+}
+
+/* ---------- Sepia Theme ---------- */
+[data-rnl-theme="sepia"] #app {
+  filter: sepia(0.35) saturate(0.85) brightness(0.97) hue-rotate(-5deg);
+}
+
+/* ---------- Dynamic Font Size ---------- */
+.rnl-meaning {
+  font-size: var(--rnl-font-size) !important;
+  line-height: 1.7 !important;
+}
+
 /* ---------- Reset & Base ---------- */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 html { scroll-behavior: smooth; }

@@ -15,6 +15,39 @@ const UIModule = (() => {
   }
   function saveSettings(s) { localStorage.setItem(SETTINGS_KEY, JSON.stringify(s)); }
 
+  /** Apply saved settings to the DOM (font size, theme) */
+  function applySettings(s) {
+    s = s || getSettings();
+    document.documentElement.style.setProperty('--rnl-font-size', (s.fontSize || 18) + 'px');
+    // 'system' and 'dark' both render as dark; 'sepia' adds warm filter
+    document.documentElement.setAttribute('data-rnl-theme', s.theme === 'sepia' ? 'sepia' : 'dark');
+  }
+
+  /**
+   * iOS-safe replacement for native confirm().
+   * Shows a custom overlay; calls onConfirm() if user taps the confirm button.
+   */
+  function showConfirm(message, onConfirm) {
+    document.getElementById('rnl-confirm-overlay')?.remove();
+    const div = document.createElement('div');
+    div.id = 'rnl-confirm-overlay';
+    div.className = 'fixed inset-0 z-[9999] flex items-center justify-center bg-black/70 backdrop-blur-sm px-6';
+    div.innerHTML = `
+      <div class="glass-panel-solid rounded-2xl p-6 w-full max-w-sm space-y-5">
+        <p class="text-white/90 text-base text-center leading-relaxed">${message}</p>
+        <div class="flex gap-3">
+          <button id="rnl-confirm-cancel" class="flex-1 py-3 rounded-xl bg-white/5 border border-white/10 text-white/60 font-medium text-sm active:bg-white/10">İptal</button>
+          <button id="rnl-confirm-ok" class="flex-1 py-3 rounded-xl bg-primary border border-primary/80 text-white font-semibold text-sm active:opacity-80">Evet, Sil</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(div);
+    const close = () => div.remove();
+    document.getElementById('rnl-confirm-cancel').addEventListener('click', close);
+    document.getElementById('rnl-confirm-ok').addEventListener('click', () => { close(); onConfirm(); });
+    div.addEventListener('click', (e) => { if (e.target === div) close(); });
+  }
+
   // ============================================================
   //  SCAN HISTORY
   // ============================================================
@@ -75,11 +108,11 @@ const UIModule = (() => {
       ${entries ? entries.map((e, idx) => `
         <div class="glass-card rounded-2xl p-4 mb-3">
           ${entries.length > 1 ? `<span class="text-[10px] text-white/30 uppercase tracking-widest font-semibold mb-1 block">Anlam ${idx + 1}</span>` : ''}
-          <p class="text-white/90 text-base leading-relaxed">${e.meaning}</p>
+          <p class="rnl-meaning text-white/90 leading-relaxed">${e.meaning}</p>
         </div>
       `).join('') : `
         <div class="glass-card rounded-2xl p-4 mb-4">
-          <p class="text-white/90 text-base leading-relaxed">${entry.meaning}</p>
+          <p class="rnl-meaning text-white/90 leading-relaxed">${entry.meaning}</p>
         </div>
       `}
       ${entry.examples && entry.examples.length > 0 ? `
@@ -1905,11 +1938,11 @@ const UIModule = (() => {
             <section class="space-y-3">
               <h2 class="text-xs font-semibold text-gray-400 uppercase tracking-widest pl-2">Görünüm</h2>
               <div class="settings-glass rounded-2xl overflow-hidden p-1 flex items-center justify-between gap-1">
-                <button data-theme="system" class="theme-btn flex-1 flex flex-col items-center justify-center gap-2 p-3 rounded-xl transition-all ${settings.theme === 'system' || settings.theme === 'dark' ? 'bg-white/10 border border-primary/50 text-white shadow-[0_0_15px_rgba(199,0,36,0.3)]' : 'hover:bg-white/5 text-gray-400 hover:text-white border border-transparent'}">
+                <button data-theme="system" class="theme-btn flex-1 flex flex-col items-center justify-center gap-2 p-3 rounded-xl transition-all ${settings.theme === 'system' ? 'bg-white/10 border border-primary/50 text-white shadow-[0_0_15px_rgba(199,0,36,0.3)]' : 'hover:bg-white/5 text-gray-400 hover:text-white border border-transparent'}">
                   <div class="w-8 h-8 rounded-full bg-gray-900 border border-gray-700"></div>
                   <span class="text-xs font-medium">Sistem</span>
                 </button>
-                <button data-theme="dark" class="theme-btn flex-1 flex flex-col items-center justify-center gap-2 p-3 rounded-xl transition-all ${settings.theme === 'dark' ? '' : 'hover:bg-white/5 text-gray-400 hover:text-white border border-transparent'}">
+                <button data-theme="dark" class="theme-btn flex-1 flex flex-col items-center justify-center gap-2 p-3 rounded-xl transition-all ${settings.theme === 'dark' ? 'bg-white/10 border border-primary/50 text-white shadow-[0_0_15px_rgba(199,0,36,0.3)]' : 'hover:bg-white/5 text-gray-400 hover:text-white border border-transparent'}">
                   <div class="w-8 h-8 rounded-full bg-[#1a1a1a] border border-gray-700"></div>
                   <span class="text-xs font-medium">Koyu</span>
                 </button>
@@ -1969,7 +2002,7 @@ const UIModule = (() => {
                 </div>
                 <div class="flex items-center justify-between p-4">
                   <span class="text-base font-medium text-gray-300">Sözlük Sayısı</span>
-                  <span class="text-sm text-primary font-bold">${DictionaryModule.getAll().length} kelime</span>
+                  <span class="text-sm text-primary font-bold">${(() => { try { const n = DictionaryModule.getAll().length; return n > 0 ? n.toLocaleString('tr-TR') + ' kelime' : '…'; } catch { return '—'; } })()}</span>
                 </div>
               </div>
               <p class="text-center text-xs text-gray-600 mt-6">
@@ -1999,6 +2032,7 @@ const UIModule = (() => {
       settings.fontSize = parseInt(slider.value);
       sizeLabel.textContent = settings.fontSize + 'px';
       saveSettings(settings);
+      applySettings(settings);
     });
 
     // Arabic clarity toggle
@@ -2021,6 +2055,7 @@ const UIModule = (() => {
       btn.addEventListener('click', () => {
         settings.theme = btn.getAttribute('data-theme');
         saveSettings(settings);
+        applySettings(settings);
         showToast('Tema değiştirildi', 'palette');
         renderSettings(); // Re-render to update active state
       });
@@ -2034,10 +2069,10 @@ const UIModule = (() => {
 
     // Clear favorites
     document.getElementById('clear-favorites-btn')?.addEventListener('click', () => {
-      if (confirm('Tüm favoriler silinecek. Emin misiniz?')) {
+      showConfirm('Tüm favoriler silinecek. Emin misiniz?', () => {
         FavoriteModule.clear();
         showToast('Favoriler temizlendi', 'heart_broken');
-      }
+      });
     });
   }
 
@@ -2056,5 +2091,6 @@ const UIModule = (() => {
     showToast,
     showWordModal,
     hideWordModal,
+    applySettings,
   };
 })();

@@ -28,6 +28,9 @@
     window.scrollTo(0, 0);
   };
 
+  // Apply saved settings immediately (font size, theme)
+  UIModule.applySettings();
+
   // Render UI immediately — don't wait for dictionary
   if (UserModule.isLoggedIn()) {
     window.navigateTo('home');
