@@ -642,43 +642,112 @@ const UIModule = (() => {
     if (panel) panel.style.transform = 'translateY(100%)';
   }
 
+  // ── AbortController for live-text zoom/pan listeners ──────────
+  let _ltvZoomAC = null;
+
   // ============================================================
   //  LIVE TEXT VIEW  (Google Translate tarzı kelime overlay'i)
   //  Fotoğraf çekildikten sonra Tesseract ile her kelimeyi bbox'lar,
   //  kullanıcı doğrudan kelimeye dokunarak anlam bakabilir.
+  //  • Pinch-to-zoom (1×–5×) + tek-parmak pan
+  //  • Chip'ler zoomLayer içinde → görüntüyle birlikte scale eder
+  //  • Beyaz outline ile tüm kelimeler her zaman görünür
   // ============================================================
   async function _showLiveTextView(srcCanvas) {
     const view      = document.getElementById('live-text-view');
     const imgEl     = document.getElementById('ltv-image');
+    const zoomLayer = document.getElementById('ltv-zoom-layer');
     const wordsCont = document.getElementById('ltv-words');
     const loadingEl = document.getElementById('ltv-loading');
     const loadingTxt= document.getElementById('ltv-loading-text');
     const brushBtn  = document.getElementById('ltv-brush-btn');
     const cancelBtn = document.getElementById('ltv-cancel-btn');
+    const contEl    = document.getElementById('ltv-image-container');
     if (!view) { _showBrushView(srcCanvas); return; }
 
-    // ── Reset & show ─────────────────────────────────────────
+    // ── Cleanup previous zoom listeners ─────────────────────
+    if (_ltvZoomAC) { _ltvZoomAC.abort(); _ltvZoomAC = null; }
+    _ltvZoomAC = new AbortController();
+    const sig = { signal: _ltvZoomAC.signal };
+
+    // ── Reset ─────────────────────────────────────────────────
     wordsCont.innerHTML = '';
+    wordsCont.style.pointerEvents = 'none';
+    if (zoomLayer) zoomLayer.style.transform = 'translate(0px,0px) scale(1)';
     loadingEl.classList.remove('hidden');
     if (loadingTxt) loadingTxt.textContent = 'Metin algılanıyor...';
     view.classList.remove('hidden');
     view.classList.add('flex');
-
-    // Draw photo into the <img> element
     imgEl.src = srcCanvas.toDataURL('image/jpeg', 0.92);
 
-    // ── Brush mode fallback ──────────────────────────────────
+    // ── Pinch-to-zoom + pan ──────────────────────────────────
+    let zoomScale = 1, zoomTx = 0, zoomTy = 0;
+    let isPinching = false;
+    let pinchStartDist = 1, pinchStartScale = 1;
+    let pinchStartMid  = { x: 0, y: 0 }, pinchStartTx = 0, pinchStartTy = 0;
+    let isPanning = false, panStartX = 0, panStartY = 0, panStartTx = 0, panStartTy = 0;
+
+    function _applyZoom() {
+      if (zoomLayer) zoomLayer.style.transform = `translate(${zoomTx}px,${zoomTy}px) scale(${zoomScale})`;
+    }
+    function _clampZoom() {
+      const cW2 = contEl.clientWidth, cH2 = contEl.clientHeight;
+      const maxTx = Math.max(0, cW2 * (zoomScale - 1) / 2);
+      const maxTy = Math.max(0, cH2 * (zoomScale - 1) / 2);
+      zoomTx = Math.max(-maxTx, Math.min(maxTx, zoomTx));
+      zoomTy = Math.max(-maxTy, Math.min(maxTy, zoomTy));
+    }
+
+    contEl.addEventListener('touchstart', (e) => {
+      if (e.touches.length === 2) {
+        isPanning = false; isPinching = true;
+        const [t1, t2] = e.touches;
+        pinchStartDist  = Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY) || 1;
+        pinchStartScale = zoomScale;
+        pinchStartMid   = { x: (t1.clientX + t2.clientX) / 2, y: (t1.clientY + t2.clientY) / 2 };
+        pinchStartTx = zoomTx; pinchStartTy = zoomTy;
+        e.preventDefault();
+      } else if (e.touches.length === 1 && zoomScale > 1.02) {
+        isPanning  = true;
+        panStartX  = e.touches[0].clientX; panStartY  = e.touches[0].clientY;
+        panStartTx = zoomTx;               panStartTy = zoomTy;
+      }
+    }, { passive: false, ...sig });
+
+    contEl.addEventListener('touchmove', (e) => {
+      if (isPinching && e.touches.length >= 2) {
+        const [t1, t2] = e.touches;
+        const dist = Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY) || pinchStartDist;
+        const mid  = { x: (t1.clientX + t2.clientX) / 2, y: (t1.clientY + t2.clientY) / 2 };
+        zoomScale = Math.max(1, Math.min(5, pinchStartScale * (dist / pinchStartDist)));
+        zoomTx    = pinchStartTx + (mid.x - pinchStartMid.x);
+        zoomTy    = pinchStartTy + (mid.y - pinchStartMid.y);
+        _clampZoom(); _applyZoom(); e.preventDefault();
+      } else if (isPanning && e.touches.length === 1) {
+        zoomTx = panStartTx + (e.touches[0].clientX - panStartX);
+        zoomTy = panStartTy + (e.touches[0].clientY - panStartY);
+        _clampZoom(); _applyZoom(); e.preventDefault();
+      }
+    }, { passive: false, ...sig });
+
+    contEl.addEventListener('touchend',    (e) => {
+      if (e.touches.length < 2) isPinching = false;
+      if (e.touches.length === 0) isPanning = false;
+    }, { passive: true, ...sig });
+    contEl.addEventListener('touchcancel', () => { isPinching = false; isPanning = false; }, { passive: true, ...sig });
+
+    // ── Brush / Cancel ───────────────────────────────────────
     brushBtn.onclick = () => {
-      view.classList.add('hidden');
-      view.classList.remove('flex');
+      if (_ltvZoomAC) { _ltvZoomAC.abort(); _ltvZoomAC = null; }
+      view.classList.add('hidden'); view.classList.remove('flex');
       _showBrushView(srcCanvas);
     };
     cancelBtn.onclick = () => {
-      view.classList.add('hidden');
-      view.classList.remove('flex');
+      if (_ltvZoomAC) { _ltvZoomAC.abort(); _ltvZoomAC = null; }
+      view.classList.add('hidden'); view.classList.remove('flex');
     };
 
-    // ── Run Tesseract word detection ─────────────────────────
+    // ── Tesseract word detection ─────────────────────────────
     let words = [];
     try {
       words = await OCRModule.recognizeWords(srcCanvas);
@@ -693,61 +762,51 @@ const UIModule = (() => {
       return;
     }
 
-    // ── Coordinate mapping: source canvas → displayed img ────
-    // Wait for <img> natural size to be available, then compute letterbox.
+    // ── <img> yüklenmesini bekle ─────────────────────────────
     await new Promise(r => {
       if (imgEl.complete && imgEl.naturalWidth > 0) { r(); return; }
-      imgEl.onload = r;
-      setTimeout(r, 800); // fallback timeout
+      imgEl.onload = r; setTimeout(r, 800);
     });
 
-    const contEl   = document.getElementById('ltv-image-container');
-    const contRect = contEl.getBoundingClientRect();
-    const cW       = contRect.width;
-    const cH       = contRect.height;
-
-    // object-fit: contain letterbox calculation
+    // ── Letterbox hesabı ─────────────────────────────────────
+    // Chip'ler zoomLayer içinde; zoomLayer contEl kadar büyük
+    const cW = contEl.clientWidth  || srcCanvas.width;
+    const cH = contEl.clientHeight || srcCanvas.height;
     const imgAspect  = srcCanvas.width / srcCanvas.height;
     const contAspect = cW / cH;
     let iW, iH, iX, iY;
-    if (imgAspect > contAspect) { iW = cW;     iH = cW / imgAspect; }
-    else                        { iH = cH;     iW = cH * imgAspect; }
+    if (imgAspect > contAspect) { iW = cW; iH = cW / imgAspect; }
+    else                        { iH = cH; iW = cH * imgAspect; }
     iX = (cW - iW) / 2;
     iY = (cH - iH) / 2;
 
-    // ── Render word chips ─────────────────────────────────────
+    // ── Chip'leri render et ───────────────────────────────────
+    const frag = document.createDocumentFragment();
+    let chipCount = 0;
     words.forEach(wd => {
       if (!wd.text || wd.text.length < 1) return;
-
-      // Map source-pixel bbox to display-pixel position
       const x = iX + (wd.bbox.x0 / srcCanvas.width)  * iW;
       const y = iY + (wd.bbox.y0 / srcCanvas.height) * iH;
-      const w = (wd.bbox.x1 - wd.bbox.x0) / srcCanvas.width  * iW;
-      const h = (wd.bbox.y1 - wd.bbox.y0) / srcCanvas.height * iH;
-
-      // Skip very tiny boxes (noise)
-      if (w < 8 || h < 8) return;
+      const w = ((wd.bbox.x1 - wd.bbox.x0) / srcCanvas.width)  * iW;
+      const h = ((wd.bbox.y1 - wd.bbox.y0) / srcCanvas.height) * iH;
+      if (w < 6 || h < 6) return;
 
       const chip = document.createElement('div');
       chip.className = 'word-chip';
       chip.setAttribute('data-word', wd.text);
-      chip.style.left   = `${x}px`;
-      chip.style.top    = `${y}px`;
-      chip.style.width  = `${w}px`;
-      chip.style.height = `${h}px`;
-
+      chip.style.cssText = `left:${x}px;top:${y}px;width:${w}px;height:${h}px;`;
       chip.addEventListener('click', () => {
-        // Deactivate previous selection
         wordsCont.querySelectorAll('.word-chip.active').forEach(c => c.classList.remove('active'));
         chip.classList.add('active');
         lookupAndShowWord(wd.text);
       });
-
-      wordsCont.appendChild(chip);
+      frag.appendChild(chip);
+      chipCount++;
     });
-
-    // Enable pointer events on words container
+    wordsCont.appendChild(frag);
     wordsCont.style.pointerEvents = 'auto';
+
+    if (chipCount === 0) showToast('Kelime kutusu oluşturulamadı. Brush modunu deneyin.', 'brush');
   }
 
   /**
@@ -1390,11 +1449,14 @@ const UIModule = (() => {
           </div>
 
           <!-- Image + word chip overlay -->
-          <div class="flex-1 relative overflow-hidden bg-black" id="ltv-image-container">
-            <img id="ltv-image" alt="" class="absolute inset-0 w-full h-full object-contain select-none" draggable="false" />
-            <!-- Tappable word chips rendered here by JS -->
-            <div id="ltv-words" class="absolute inset-0" style="pointer-events:none;"></div>
-            <!-- Loading state -->
+          <div class="flex-1 relative overflow-hidden bg-black" id="ltv-image-container" style="touch-action:none;">
+            <!-- Zoom/pan layer — image + chips scale/translate together -->
+            <div id="ltv-zoom-layer" class="absolute inset-0" style="transform-origin:center center;will-change:transform;">
+              <img id="ltv-image" alt="" class="absolute inset-0 w-full h-full object-contain select-none pointer-events-none" draggable="false" />
+              <!-- Tappable word chips rendered here by JS -->
+              <div id="ltv-words" class="absolute inset-0" style="pointer-events:none;"></div>
+            </div>
+            <!-- Loading state (outside zoom layer — stays centered) -->
             <div id="ltv-loading" class="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-black/50 pointer-events-none">
               <div class="spinner"></div>
               <p id="ltv-loading-text" class="text-white/60 text-sm">Metin algılanıyor...</p>
