@@ -327,19 +327,32 @@ const DictionaryModule = (() => {
 
     // Partial / fuzzy match (optimized for large datasets)
     const first = normalized[0] || '';
+    // Minimum length for the "query includes dict-entry" direction:
+    // prevents trivially short entries ("va", "vaz") from dominating
+    // when the query is a long derived word (e.g. "vazifedarane").
+    const minMatchLen = normalized.length > 5
+      ? Math.max(3, Math.floor(normalized.length * 0.4))
+      : 1;
     const byContains = [];
 
     for (const item of normalizedEntries) {
       const w = item.nw || item.ns;
       if (!w) continue;
       if (first && w[0] !== first) continue;
-      if (w.includes(normalized) || normalized.includes(w)) {
+      if (w.includes(normalized) || (normalized.includes(w) && w.length >= minMatchLen)) {
         byContains.push(item.entry);
-        if (byContains.length >= 8) break;
+        if (byContains.length >= 20) break; // collect more, trim later
       }
     }
 
-    let suggestions = byContains;
+    // Prefer longer matches (closer to query length) over short ones
+    byContains.sort((a, b) => {
+      const wa = normalize(a.word || '').length;
+      const wb = normalize(b.word || '').length;
+      return wb - wa;
+    });
+
+    let suggestions = byContains.slice(0, 8);
 
     if (suggestions.length < 5) {
       const fuzzy = [];
@@ -390,6 +403,30 @@ const DictionaryModule = (() => {
       const arr = exactIndex.get(stem);
       if (arr && arr.length > 0) {
         return { found: true, entry: arr[0], entries: arr };
+      }
+    }
+
+    // 2.5) Progressive prefix match — longest dict entry that is a prefix of the query.
+    //       Handles Arabic/Persian derivational suffixes:
+    //       vazifedarane → vazifedar, mütefekkir → mütefek…, medarı → medar, etc.
+    //       Requires the prefix to cover at least 40% of the query length.
+    if (normalized.length >= 5) {
+      const minPrefixLen = Math.max(3, Math.floor(normalized.length * 0.4));
+      let bestPrefixEntry = null;
+      let bestPrefixLen   = 0;
+      for (const item of normalizedEntries) {
+        const w = item.nw || item.ns;
+        if (!w || w.length < minPrefixLen || w.length <= bestPrefixLen) continue;
+        if (w[0] !== normalized[0]) continue; // first-char short-circuit
+        if (normalized.startsWith(w)) {
+          bestPrefixLen   = w.length;
+          bestPrefixEntry = item.entry;
+        }
+      }
+      if (bestPrefixEntry) {
+        const key = normalize(bestPrefixEntry.word || '');
+        const allE = exactIndex.get(key) || [bestPrefixEntry];
+        return { found: true, entry: bestPrefixEntry, entries: allE };
       }
     }
 
