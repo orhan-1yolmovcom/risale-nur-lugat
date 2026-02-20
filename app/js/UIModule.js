@@ -308,7 +308,8 @@ const UIModule = (() => {
 
         <div class="relative z-10 flex flex-col h-full w-full">
           <!-- Header -->
-          <header class="flex items-center justify-between px-6 pt-12 pb-4">
+          <header class="flex items-center justify-between px-6 pb-4"
+                  style="padding-top:max(env(safe-area-inset-top, 0px), 14px);">
             <div class="flex items-center gap-3">
               <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-primary to-primary-dark flex items-center justify-center shadow-lg shadow-primary/20 ring-1 ring-white/10">
                 <span class="material-symbols-outlined text-white text-[20px]">auto_stories</span>
@@ -1605,7 +1606,10 @@ const UIModule = (() => {
               <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                 <span class="material-symbols-outlined text-white/40 text-xl">search</span>
               </div>
-              <input id="search-input" class="input-glass w-full rounded-2xl h-12 pl-10 pr-4 text-white placeholder:text-white/30 text-base" placeholder="Kelime ara..." type="text" autofocus />
+              <input id="search-input" class="input-glass w-full rounded-2xl h-12 pl-10 pr-4 text-base" placeholder="Kelime ara..."
+                     type="text" autofocus
+                     style="background-color:rgba(20,10,12,0.9);color:rgba(255,255,255,0.95);-webkit-text-fill-color:rgba(255,255,255,0.95);"
+              />
             </div>
           </header>
 
