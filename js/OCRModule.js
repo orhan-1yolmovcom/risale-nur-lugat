@@ -1,0 +1,610 @@
+/* ===== OCRModule — Camera & Real OCR via Tesseract.js ===== */
+
+const OCRModule = (() => {
+  let videoStream = null;
+  let videoEl = null;
+  let worker = null;
+
+  // API key artık server-side /api/ocr üzerinde tutulur (Vercel env: OPENAI_API_KEY).
+  // Client kodda API key saklanmaz.
+
+  // ── Progress UI helpers ──────────────────────────────────
+  function _showOverlay() {
+    const el = document.getElementById('ocr-overlay');
+    if (el) { el.classList.remove('hidden'); el.classList.add('flex'); }
+  }
+  function _hideOverlay() {
+    const el = document.getElementById('ocr-overlay');
+    if (el) { el.classList.add('hidden'); el.classList.remove('flex'); }
+  }
+  function _setProgress(pct, status, detail) {
+    const bar     = document.getElementById('ocr-overlay-progress');
+    const pctEl   = document.getElementById('ocr-overlay-percent');
+    const statEl  = document.getElementById('ocr-overlay-status');
+    const detEl   = document.getElementById('ocr-overlay-detail');
+    if (bar)    bar.style.width = pct + '%';
+    if (pctEl)  pctEl.textContent = Math.round(pct) + '%';
+    if (status && statEl) statEl.textContent = status;
+    if (detail && detEl)  detEl.textContent  = detail;
+  }
+
+  // ── Tesseract worker lifecycle ────────────────────────────
+  /**
+   * Lazily create & initialise a Tesseract worker.
+   * Uses Turkish + Ottoman/Latin recognition.
+   */
+  async function _getWorker() {
+    if (worker) return worker;
+
+    _setProgress(5, 'OCR motoru yükleniyor...', 'Tesseract başlatılıyor');
+
+    worker = await Tesseract.createWorker('tur', 1, {
+      logger: (m) => {
+        if (m.status === 'recognizing text') {
+          const p = Math.round((m.progress || 0) * 100);
+          _setProgress(30 + p * 0.65, 'Metin tanınıyor...', `İşleniyor ${p}%`);
+        } else if (m.status === 'loading language traineddata') {
+          const p = Math.round((m.progress || 0) * 100);
+          _setProgress(5 + p * 0.2, 'Dil verisi indiriliyor...', `Türkçe ${p}%`);
+        }
+      },
+    });
+
+    _setProgress(28, 'Motor hazır', 'Tanıma başlıyor...');
+    return worker;
+  }
+
+  // ── Camera ────────────────────────────────────────────────
+  async function startCamera(video) {
+    videoEl = video;
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } }
+      });
+      videoStream = stream;
+      video.srcObject = stream;
+      await video.play();
+      return true;
+    } catch (err) {
+      console.error('[OCRModule] Camera error:', err);
+      return false;
+    }
+  }
+
+  function stopCamera() {
+    if (videoStream) { videoStream.getTracks().forEach(t => t.stop()); videoStream = null; }
+    if (videoEl)     { videoEl.srcObject = null; videoEl = null; }
+  }
+
+  // ── Frame capture: full frame (no crop) ───────────────────
+  /**
+   * Captures the entire video frame without any cropping or preprocessing.
+   * Used as source for the crop-selection UI.
+   */
+  function captureFullFrame() {
+    if (!videoEl) return null;
+    const vw = videoEl.videoWidth  || 640;
+    const vh = videoEl.videoHeight || 480;
+    const canvas = document.createElement('canvas');
+    canvas.width  = vw;
+    canvas.height = vh;
+    canvas.getContext('2d').drawImage(videoEl, 0, 0, vw, vh);
+    return canvas;
+  }
+
+  // ── Frame capture with preprocessing (legacy / fallback) ─
+  function captureFrame() {
+    if (!videoEl) return null;
+    const vw = videoEl.videoWidth  || 640;
+    const vh = videoEl.videoHeight || 480;
+
+    // Crop to the center 85 % area (matches the red viewfinder)
+    const cropW = Math.round(vw * 0.85);
+    const cropH = Math.round(vh * 0.85);
+    const sx = Math.round((vw - cropW) / 2);
+    const sy = Math.round((vh - cropH) / 2);
+
+    const canvas = document.createElement('canvas');
+    canvas.width  = cropW;
+    canvas.height = cropH;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(videoEl, sx, sy, cropW, cropH, 0, 0, cropW, cropH);
+
+    _preprocessCanvas(ctx, cropW, cropH);
+    return canvas;
+  }
+
+  // ── Crop a source canvas to pixel rect + preprocess ───────
+  /**
+   * @param {HTMLCanvasElement} sourceCanvas  – full captured frame
+   * @param {number} x  – pixel x in source
+   * @param {number} y  – pixel y in source
+   * @param {number} w  – pixel width in source
+   * @param {number} h  – pixel height in source
+   * @returns {HTMLCanvasElement} cropped & preprocessed canvas ready for OCR
+   */
+  function cropForOCR(sourceCanvas, x, y, w, h) {
+    const sw = sourceCanvas.width;
+    const sh = sourceCanvas.height;
+    // Clamp to source bounds
+    x = Math.max(0, Math.min(x, sw - 1));
+    y = Math.max(0, Math.min(y, sh - 1));
+    w = Math.max(4, Math.min(w, sw - x));
+    h = Math.max(4, Math.min(h, sh - y));
+
+    const canvas = document.createElement('canvas');
+    canvas.width  = w;
+    canvas.height = h;
+    const ctx = canvas.getContext('2d');
+
+    // Draw selected region
+    ctx.drawImage(sourceCanvas, x, y, w, h, 0, 0, w, h);
+
+    // Fill outside area with white (already cropped so nothing outside)
+    // Preprocess for OCR accuracy
+    _preprocessCanvas(ctx, w, h);
+    return canvas;
+  }
+
+  /**
+   * Simple greyscale + contrast boost to help Tesseract accuracy
+   */
+  function _preprocessCanvas(ctx, w, h) {
+    const imgData = ctx.getImageData(0, 0, w, h);
+    const d = imgData.data;
+    for (let i = 0; i < d.length; i += 4) {
+      // Greyscale
+      const grey = 0.299 * d[i] + 0.587 * d[i+1] + 0.114 * d[i+2];
+      // Contrast stretch (factor 1.5 around midpoint 128)
+      let v = 128 + 1.5 * (grey - 128);
+      v = v < 0 ? 0 : v > 255 ? 255 : v;
+      d[i] = d[i+1] = d[i+2] = v;
+    }
+    ctx.putImageData(imgData, 0, 0);
+  }
+
+  // ── GPT OCR response helpers ─────────────────────────────
+  function _stripCodeFences(s) {
+    if (!s) return '';
+    return s
+      .replace(/^```[a-z]*\n?/i, '')
+      .replace(/```$/i, '')
+      .trim();
+  }
+
+  function _tryParseJson(s) {
+    try { return JSON.parse(s); } catch { return null; }
+  }
+
+  function _extractJsonObjectString(s) {
+    if (!s) return '';
+    const m = s.match(/\{[\s\S]*\}/);
+    return m ? m[0] : '';
+  }
+
+  function _normalizeJsonString(s) {
+    // Minimal repair for common model formatting noise
+    return (s || '')
+      .replace(/[“”]/g, '"')
+      .replace(/[‘’]/g, "'")
+      .replace(/,\s*([}\]])/g, '$1')
+      .trim();
+  }
+
+  function _sanitizeLines(lines) {
+    if (!Array.isArray(lines)) return [];
+    return lines
+      .map(line => Array.isArray(line) ? line : [])
+      .map(line => line.map(w => String(w).trim()).filter(Boolean))
+      .filter(line => line.length > 0);
+  }
+
+  function _linesFromFullText(text) {
+    if (!text) return [];
+    return text
+      .split(/\r?\n+/)
+      .map(line => line.split(/\s+/).map(w => w.trim()).filter(Boolean))
+      .filter(line => line.length > 0);
+  }
+
+  function _parseModelOCRResponse(raw) {
+    const stripped = _stripCodeFences((raw || '').trim());
+
+    // 1) direct parse
+    let parsed = _tryParseJson(stripped);
+
+    // 2) extract {...} block parse
+    if (!parsed) {
+      const objStr = _extractJsonObjectString(stripped);
+      parsed = _tryParseJson(objStr);
+    }
+
+    // 3) normalized parse (smart quotes / trailing commas)
+    if (!parsed) {
+      const repaired = _normalizeJsonString(_extractJsonObjectString(stripped) || stripped);
+      parsed = _tryParseJson(repaired);
+    }
+
+    // 4) fallback: treat response as plain text
+    if (!parsed || typeof parsed !== 'object') {
+      const plain = stripped;
+      const lines = _linesFromFullText(plain);
+      return {
+        full_text: plain,
+        lines,
+      };
+    }
+
+    const fullText = String(parsed.full_text || '').trim();
+    let lines = _sanitizeLines(parsed.lines);
+    if (!lines.length && fullText) lines = _linesFromFullText(fullText);
+
+    return {
+      full_text: fullText,
+      lines,
+    };
+  }
+
+  // ── GPT-4o-mini Vision OCR ──────────────────────────────────
+  /**
+   * Sends the canvas to GPT-4o-mini with an ultra-minimal OCR prompt.
+   * Returns { text, tokens, lines } in the same shape as performOCR.
+   *
+   * Cost optimisation:
+   *   • Image resized to ≤ 1024 px longest side before encoding
+   *   • JPEG q=0.88 (smaller payload than PNG)
+   *   • temperature=0  — no creative variation
+   *   • max_tokens=1500 — enough for a full page, not wasteful
+   *   • No preprocessing (greyscale) — GPT handles colour natively
+   */
+  async function performOCRWithGPT(canvas) {
+    _showOverlay();
+    _setProgress(5, 'GPT-4o-mini bağlanıyor...', 'Sunucu hazırlanıyor');
+    console.info('[GPT-OCR] Başladı: görsel OCR akışı başlatılıyor');
+
+    try {
+      if (!canvas) throw new Error('OCR için görsel bulunamadı');
+
+      // ── Resize to ≤ 1024 px (reduces tokens & cost) ─────────
+      const MAX = 1024;
+      let sw = canvas.width, sh = canvas.height;
+      if (sw > MAX || sh > MAX) {
+        const s = MAX / Math.max(sw, sh);
+        sw = Math.round(sw * s);
+        sh = Math.round(sh * s);
+      }
+      const resized = document.createElement('canvas');
+      resized.width = sw; resized.height = sh;
+      resized.getContext('2d').drawImage(canvas, 0, 0, sw, sh);
+      const base64 = resized.toDataURL('image/jpeg', 0.88).split(',')[1];
+      console.info(`[GPT-OCR] Görsel hazırlandı: ${canvas.width}x${canvas.height} → ${sw}x${sh}`);
+
+      _setProgress(20, 'Görsel gönderiliyor...', `${sw}×${sh} px · JPEG`);
+      console.info('[GPT-OCR] Görsel gönderildi: /api/ocr proxy üzerinden');
+      _setProgress(45, 'Görsel inceleniyor...', 'Model yanıtı bekleniyor');
+
+      // ── Proxy request (server-side, CORS-free) ───────────────
+      const res = await fetch('/api/ocr', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ base64, width: sw, height: sh }),
+      });
+      console.info(`[GPT-OCR] API döndü: HTTP ${res.status}`);
+
+      if (!res.ok) {
+        const errBody = await res.json().catch(() => ({}));
+        throw new Error(`OCR proxy ${res.status}: ${errBody?.error || 'bilinmeyen hata'}`);
+      }
+
+      const data  = await res.json();
+      const raw   = (data.choices?.[0]?.message?.content || '').trim();
+      console.info('[GPT-OCR] API yanıt içeriği alındı, JSON ayrıştırılıyor');
+
+      _setProgress(85, 'Yanıt işleniyor...', 'JSON ayrıştırılıyor');
+
+      const parsed = _parseModelOCRResponse(raw);
+      const text   = parsed.full_text;
+      const lines  = parsed.lines;
+      const tokens = lines.flat();
+
+      // ── Build words_found via JS dictionary lookup (free, O(1)) ──
+      if (typeof DictionaryModule !== 'undefined' && typeof DictionaryModule.load === 'function') {
+        await DictionaryModule.load();
+      }
+      _setProgress(92, 'Lügat eşleştiriliyor...', `${tokens.length} kelime taranıyor`);
+      const wordsFound = [];
+      const seenWords  = new Set();
+
+      const safeLookup = (rawWord) => {
+        try {
+          return (typeof DictionaryModule !== 'undefined' && typeof DictionaryModule.lookup === 'function')
+            ? DictionaryModule.lookup(rawWord)
+            : null;
+        } catch (_) {
+          return null;
+        }
+      };
+
+      const addEntries = (entries) => {
+        for (const e of (entries || [])) {
+          const key = (e.word || '').toUpperCase();
+          if (!key || seenWords.has(key)) continue;
+          seenWords.add(key);
+          wordsFound.push({
+            word:     e.word     || '',
+            meaning:  e.meaning  || '',
+            root:     e.stem     || '',
+            example:  '',
+            synonyms: [],
+          });
+        }
+      };
+
+      const safeSmartLookup = (rawWord) => {
+        try {
+          return (typeof DictionaryModule !== 'undefined' && typeof DictionaryModule.smartLookup === 'function')
+            ? DictionaryModule.smartLookup(rawWord)
+            : safeLookup(rawWord);
+        } catch (_) {
+          return safeLookup(rawWord);
+        }
+      };
+
+      const tryMatch = (rawWord) => {
+        if (!rawWord || String(rawWord).trim().length < 2) return false;
+
+        // Use smartLookup: exact → Turkish stems → OCR confusion → combined
+        const smart = safeSmartLookup(rawWord);
+        if (smart?.found) {
+          addEntries(smart.entries || [smart.entry]);
+          return true;
+        }
+
+        // Izafet / OCR suffix fallback: "şahs-ı" -> "şahs"
+        const trimmed = String(rawWord).replace(/[-‐‑‒–—]?[ıiuü]$/i, '');
+        if (trimmed && trimmed !== rawWord) {
+          const alt = safeSmartLookup(trimmed);
+          if (alt?.found) {
+            addEntries(alt.entries || [alt.entry]);
+            return true;
+          }
+        }
+
+        // Conservative suggestion fallback
+        if (smart?.suggestions?.length) {
+          const candidate = smart.suggestions[0];
+          const nRaw = (typeof DictionaryModule !== 'undefined' && typeof DictionaryModule.normalize === 'function')
+            ? DictionaryModule.normalize(rawWord)
+            : String(rawWord).toLowerCase();
+          const nCand = (typeof DictionaryModule !== 'undefined' && typeof DictionaryModule.normalize === 'function')
+            ? DictionaryModule.normalize(candidate.stem || candidate.word || '')
+            : String(candidate.word || '').toLowerCase();
+          const minCandLen = 3;
+          const rawLongEnough = nRaw && nRaw.length >= 4;
+          const candLongEnough = nCand && nCand.length >= minCandLen;
+          const strongPrefix = rawLongEnough && candLongEnough && (
+            (nRaw.startsWith(nCand) && nCand.length >= Math.floor(nRaw.length * 0.6)) ||
+            (nCand.startsWith(nRaw) && nRaw.length >= Math.floor(nCand.length * 0.6))
+          );
+          if (nRaw && nCand && (nRaw === nCand || strongPrefix)) {
+            addEntries([candidate]);
+            return true;
+          }
+        }
+
+        return false;
+      };
+
+      // 1) Phrase matching (2-4 grams): captures entries like "ŞAHS-I MANEVÎ"
+      for (const line of lines) {
+        const row = (line || []).map(w => String(w || '').trim()).filter(Boolean);
+        if (row.length < 2) continue;
+
+        const used = new Array(row.length).fill(false);
+        for (let n = Math.min(4, row.length); n >= 2; n--) {
+          for (let i = 0; i <= row.length - n; i++) {
+            if (used.slice(i, i + n).some(Boolean)) continue;
+            const phrase = row.slice(i, i + n).join(' ');
+            if (tryMatch(phrase)) {
+              for (let k = i; k < i + n; k++) used[k] = true;
+            }
+          }
+        }
+      }
+
+      // 2) Single token matching (uses smartLookup for Turkish stems + OCR confusion)
+      for (const token of tokens) {
+        if (!token || token.length < 2) continue;
+        tryMatch(token);
+      }
+      console.info(`[GPT-OCR] Lügat eşleşmesi: ${wordsFound.length} kelime bulundu`);
+
+      // Usage info (nice for debugging)
+      const usage = data.usage || {};
+      console.info(
+        `[GPT-OCR] prompt=${usage.prompt_tokens}t · completion=${usage.completion_tokens}t · total=${usage.total_tokens}t`
+      );
+      console.info('[GPT-OCR] Metinler böyle (ilk 20 token):', tokens.slice(0, 20));
+
+      _setProgress(100, 'Tamamlandı!', `${wordsFound.length} lügat eşleşmesi · ${usage.total_tokens || '?'} token`);
+      await _sleep(400);
+      _hideOverlay();
+
+      return { text: text || 'Metin tespit edilemedi.', tokens, lines, wordsFound };
+
+    } catch (err) {
+      console.error('[OCRModule] GPT OCR error:', err);
+      _hideOverlay();
+      throw err; // re-throw so callers can fall back to Tesseract
+    }
+  }
+
+  // ── Real OCR: canvas (GPT-first, Tesseract fallback) ──────
+  async function performOCR(canvas) {
+    // Try GPT-4o-mini first (via /api/ocr proxy, no API key needed client-side)
+    try {
+      console.info('[OCRModule] OCR yolu: GPT-4o-mini (server proxy)');
+      return await performOCRWithGPT(canvas);
+    } catch (err) {
+      console.warn('[OCRModule] GPT failed, falling back to Tesseract:', err.message);
+      // fall through to Tesseract
+    }
+
+    // ── Tesseract fallback ────────────────────────────────────
+    _showOverlay();
+    _setProgress(2, 'Hazırlanıyor...', 'Tesseract motoru kullanılıyor');
+    try {
+      if (!canvas) throw new Error('Çerçeve yakalanamadı');
+      const blob = await new Promise(res => canvas.toBlob(res, 'image/png'));
+      const w    = await _getWorker();
+      _setProgress(30, 'Metin tanınıyor...', 'Tesseract çalışıyor');
+      const { data } = await w.recognize(blob);
+      const text = (data.text || '').trim();
+      _setProgress(100, 'Tamamlandı!', `${text.split(/\s+/).length} kelime bulundu`);
+      await _sleep(400);
+      _hideOverlay();
+      const tokens = tokenize(text);
+      return { text: text || 'Metin tespit edilemedi.', tokens, lines: [] };
+    } catch (err) {
+      console.error('[OCRModule] Tesseract OCR error:', err);
+      _hideOverlay();
+      return { text: 'OCR işlemi sırasında hata oluştu.', tokens: [], lines: [] };
+    }
+  }
+
+  // ── Real OCR: image file (GPT-first, Tesseract fallback) ─
+  async function performOCRFromImage(file) {
+    // Build canvas from the file first (needed for both GPT and Tesseract paths)
+    let canvas;
+    try {
+      const imageBitmap = await createImageBitmap(file);
+      canvas = document.createElement('canvas');
+      canvas.width  = imageBitmap.width;
+      canvas.height = imageBitmap.height;
+      canvas.getContext('2d').drawImage(imageBitmap, 0, 0);
+    } catch (err) {
+      console.error('[OCRModule] Image load error:', err);
+      return { text: 'Görsel yüklenirken hata oluştu.', tokens: [], lines: [] };
+    }
+
+    // Try GPT-4o-mini first (via /api/ocr proxy)
+    try {
+      console.info('[OCRModule] Görsel dosya OCR yolu: GPT-4o-mini (server proxy)');
+      return await performOCRWithGPT(canvas);
+    } catch (err) {
+      console.warn('[OCRModule] GPT failed for image file, falling back to Tesseract:', err.message);
+    }
+
+    // ── Tesseract fallback ────────────────────────────────────
+    _showOverlay();
+    _setProgress(2, 'Görsel yükleniyor...', file.name || 'dosya');
+    try {
+      // Preprocess for Tesseract
+      const ctx = canvas.getContext('2d');
+      _preprocessCanvas(ctx, canvas.width, canvas.height);
+      const blob = await new Promise(res => canvas.toBlob(res, 'image/png'));
+      const w    = await _getWorker();
+      _setProgress(30, 'Metin tanınıyor...', 'Tesseract çalışıyor');
+      const { data } = await w.recognize(blob);
+      const text = (data.text || '').trim();
+      _setProgress(100, 'Tamamlandı!', `${text.split(/\s+/).length} kelime bulundu`);
+      await _sleep(400);
+      _hideOverlay();
+      const tokens = tokenize(text);
+      return { text: text || 'Metin tespit edilemedi.', tokens, lines: [] };
+    } catch (err) {
+      console.error('[OCRModule] Tesseract image OCR error:', err);
+      _hideOverlay();
+      return { text: 'Görsel OCR işlemi sırasında hata oluştu.', tokens: [], lines: [] };
+    }
+  }
+
+  // ── Tokenize ─────────────────────────────────────────────
+  function tokenize(text) {
+    if (!text) return [];
+    return text
+      .split(/\s+/)
+      .map(t => t.trim())
+      .filter(t => t.length > 0);
+  }
+
+  // ── Flash toggle ─────────────────────────────────────────
+  async function toggleFlash() {
+    if (!videoStream) return false;
+    const track = videoStream.getVideoTracks()[0];
+    if (!track) return false;
+    try {
+      const caps = track.getCapabilities();
+      if (caps.torch) {
+        const settings = track.getSettings();
+        await track.applyConstraints({ advanced: [{ torch: !settings.torch }] });
+        return true;
+      }
+    } catch (e) { console.warn('[OCRModule] Flash not supported:', e); }
+    return false;
+  }
+
+  /**
+   * Run Tesseract on the canvas and return an array of word objects with
+   * pixel-level bounding boxes in source-canvas coordinates.
+   * Used by Live Text overlay to position tappable word chips.
+   *
+   * @param {HTMLCanvasElement} canvas
+   * @returns {Promise<Array<{text:string, bbox:{x0,y0,x1,y1}, confidence:number}>>}
+   */
+  async function recognizeWords(canvas) {
+    // Downscale for speed — Tesseract is slower on large images
+    const MAX = 960;
+    const origW = canvas.width;
+    const origH = canvas.height;
+    const scale = (origW > MAX || origH > MAX)
+      ? MAX / Math.max(origW, origH)
+      : 1;
+    const sw = Math.round(origW * scale);
+    const sh = Math.round(origH * scale);
+
+    const tmp = document.createElement('canvas');
+    tmp.width = sw; tmp.height = sh;
+    tmp.getContext('2d').drawImage(canvas, 0, 0, sw, sh);
+    _preprocessCanvas(tmp.getContext('2d'), sw, sh); // greyscale+contrast boost
+
+    const blob = await new Promise(r => tmp.toBlob(r, 'image/png'));
+    const w    = await _getWorker();
+    const { data } = await w.recognize(blob);
+
+    return (data.words || [])
+      .filter(wd => wd.text && wd.text.trim().length > 0 && wd.confidence > 15)
+      .map(wd => ({
+        text: wd.text.trim().replace(/[.,;:!?"'()\[\]{}«»–—\-]/g, '').trim(),
+        bbox: {
+          x0: Math.round(wd.bbox.x0 / scale),
+          y0: Math.round(wd.bbox.y0 / scale),
+          x1: Math.round(wd.bbox.x1 / scale),
+          y1: Math.round(wd.bbox.y1 / scale),
+        },
+        confidence: Math.round(wd.confidence),
+      }))
+      .filter(wd => wd.text.length > 0);
+  }
+
+  // ── Get active video track (used for pinch-to-zoom) ───────
+  function getVideoTrack() {
+    if (!videoStream) return null;
+    return videoStream.getVideoTracks()[0] || null;
+  }
+
+  // ── Terminate worker (clean up) ──────────────────────────
+  async function terminateWorker() {
+    if (worker) { await worker.terminate(); worker = null; }
+  }
+
+  function _sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+  return {
+    startCamera, stopCamera,
+    captureFullFrame, captureFrame, cropForOCR,
+    performOCR, performOCRWithGPT, performOCRFromImage,
+    recognizeWords,
+    tokenize, toggleFlash, getVideoTrack, terminateWorker,
+  };
+})();

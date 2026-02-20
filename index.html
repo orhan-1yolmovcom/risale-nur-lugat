@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html class="dark" lang="tr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <title>Risale-i Nur Lûgat</title>
+  <meta name="description" content="Kamera ile Risale-i Nur metinlerini tarayıp bilinmeyen kelimelerin anlamlarını gösteren uygulama." />
+  <meta name="theme-color" content="#181012" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📖</text></svg>" />
+
+  <!-- Material Symbols -->
+  <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet" />
+  <!-- Google Fonts: Inter -->
+  <link href="https://fonts.googleapis.com" rel="preconnect" />
+  <link crossorigin href="https://fonts.gstatic.com" rel="preconnect" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+  <script>
+    tailwind.config = {
+      darkMode: "class",
+      theme: {
+        extend: {
+          colors: {
+            "primary": "#c70024",
+            "primary-dark": "#9e001d",
+            "primary-light": "#ff1a40",
+            "background-dark": "#181012",
+            "surface-dark": "#231518",
+            "glass-border": "rgba(255, 255, 255, 0.08)",
+          },
+          fontFamily: {
+            "display": ["Inter", "sans-serif"],
+          },
+          borderRadius: {
+            "DEFAULT": "0.25rem",
+            "lg": "0.5rem",
+            "xl": "0.75rem",
+            "2xl": "1rem",
+            "3xl": "1.5rem",
+            "full": "9999px"
+          },
+        },
+      },
+    }
+  </script>
+  <link rel="stylesheet" href="css/styles.css" />
+</head>
+<body class="font-display antialiased text-white h-full min-h-screen selection:bg-primary selection:text-white overflow-x-hidden bg-background-dark">
+
+  <!-- App Root -->
+  <div id="app" class="relative min-h-screen w-full flex flex-col">
+    <!-- Initial loading splash — replaced by JS on first render -->
+    <div id="app-loading" class="flex flex-col items-center justify-center min-h-screen gap-5">
+      <div style="width:56px;height:56px;border:3px solid rgba(199,0,36,0.2);border-top-color:#c70024;border-radius:50%;animation:spin 0.8s linear infinite;"></div>
+      <p style="color:rgba(255,255,255,0.4);font-size:14px;font-family:sans-serif;">Yükleniyor…</p>
+    </div>
+  </div>
+  <style>@keyframes spin{to{transform:rotate(360deg)}}</style>
+
+  <!-- Word Meaning Modal (Global Overlay) -->
+  <div id="word-modal-overlay" class="fixed inset-0 z-[100] hidden items-end justify-center bg-black/60 backdrop-blur-sm transition-all">
+    <div id="word-modal" class="w-full max-w-md mx-auto rounded-t-[2rem] overflow-hidden transform translate-y-full transition-transform duration-300 ease-out flex flex-col"
+         style="max-height:88dvh;">
+      <div class="glass-panel-solid flex flex-col overflow-hidden"
+           style="padding: 20px 24px 0 24px; padding-bottom: max(env(safe-area-inset-bottom, 0px), 24px);">
+        <!-- Modal Handle -->
+        <div class="flex justify-center mb-4 flex-shrink-0">
+          <div class="w-10 h-1 rounded-full bg-white/20"></div>
+        </div>
+        <!-- Modal Content — scrollable -->
+        <div id="word-modal-content" class="overflow-y-auto flex-1" style="-webkit-overflow-scrolling:touch;">
+          <!-- Filled dynamically -->
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Notification -->
+  <div id="toast" class="fixed left-1/2 -translate-x-1/2 z-[200] hidden"
+       style="top:max(env(safe-area-inset-top, 0px), 16px); margin-top: 8px;">
+    <div class="glass-panel rounded-2xl px-5 py-3 flex items-center gap-3 shadow-lg">
+      <span id="toast-icon" class="material-symbols-outlined text-primary text-xl"></span>
+      <span id="toast-text" class="text-sm font-medium text-white/90"></span>
+    </div>
+  </div>
+
+  <!-- OCR Processing Overlay -->
+  <div id="ocr-overlay" class="fixed inset-0 z-[150] hidden items-center justify-center bg-black/80 backdrop-blur-md transition-all">
+    <div class="flex flex-col items-center gap-5 p-8 rounded-3xl glass-panel-solid max-w-[300px] w-full mx-4">
+      <div class="relative w-16 h-16">
+        <div class="spinner" style="width:64px;height:64px;border-width:4px;"></div>
+      </div>
+      <div class="text-center">
+        <p id="ocr-overlay-status" class="text-white font-semibold text-base mb-1">Metin tanınıyor...</p>
+        <p id="ocr-overlay-detail" class="text-white/50 text-xs">Lütfen bekleyin</p>
+      </div>
+      <div class="w-full bg-white/10 rounded-full h-2 overflow-hidden">
+        <div id="ocr-overlay-progress" class="h-full bg-primary rounded-full transition-all duration-300" style="width:0%"></div>
+      </div>
+      <p id="ocr-overlay-percent" class="text-primary text-sm font-bold">0%</p>
+    </div>
+  </div>
+
+  <!-- Tesseract.js OCR Engine -->
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+
+  <!-- JavaScript Modules -->
+  <script src="js/UserModule.js"></script>
+  <script src="js/DictionaryModule.js"></script>
+  <script src="js/FavoriteModule.js"></script>
+  <script src="js/config.sample.js"></script>
+  <script src="js/OCRModule.js"></script>
+  <script src="js/UIModule.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
